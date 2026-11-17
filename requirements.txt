@@ -1,0 +1,7 @@
+anthropic>=2.9.0
+python-dotenv>=1.0
+pillow>=10.0
+litellm
+ddgs
+python-telegram-bot[job-queue]>=22.0,<23
+playwright
