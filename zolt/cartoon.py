@@ -71,12 +71,63 @@ async def _eleven(text: str, voice_id: str, out: Path) -> list[tuple[float, floa
     return sentences
 
 
+# Google Gemini TTS: natural, emotional voices that speak Bangla; free with her Gemini key.
+GEMINI_TTS_MODELS = ["gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts",
+                     "gemini-3.8-flash-lite-tts"]
+GEMINI_VOICES = {"man": ["Charon", "Orus"], "woman": ["Kore", "Aoede"], "girl": ["Leda", "Despina"],
+                 "boy": ["Puck", "Achird"], "old_man": ["Algenib", "Rasalgethi"], "old_woman": ["Gacrux", "Vindemiatrix"],
+                 "narrator_female": ["Sulafat"], "narrator_male": ["Iapetus"]}
+STYLE = {"neutral": "naturally", "happy": "happily, smiling", "sad": "sadly, with a heavy heart",
+         "angry": "angrily, raising the voice", "surprised": "with shock and surprise",
+         "crying": "while crying, voice breaking", "narrator": "like a warm, emotional storyteller"}
+_gemini_dead: set[str] = set()   # models whose quota ran out in this run
+
+
+async def _gemini_tts(text: str, voice: str, style: str, out: Path) -> list:
+    import base64
+    import wave
+
+    import httpx
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    # Only the line itself: these models read any instruction aloud and don't accept a system prompt.
+    # The emotion comes from the words; `style` is kept for voices that support it later.
+    body = {"contents": [{"parts": [{"text": text}]}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}}}}
+    async with httpx.AsyncClient(timeout=120) as client:
+        for model in [m for m in GEMINI_TTS_MODELS if m not in _gemini_dead]:
+            for attempt in range(3):
+                r = await client.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                      params={"key": key}, json=body)
+                if r.status_code == 200:
+                    try:
+                        pcm = base64.b64decode(r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]["data"])
+                    except (KeyError, IndexError):
+                        break   # no audio in the answer: try the next model
+                    with wave.open(str(out), "wb") as w:
+                        w.setnchannels(1)
+                        w.setsampwidth(2)
+                        w.setframerate(24000)
+                        w.writeframes(pcm)
+                    return []   # no word timings; subtitles are spread over the line
+                delay = re.search(r'"retryDelay":\s*"(\d+)', r.text)
+                per_minute = "PerDay" not in r.text and (delay is None or int(delay.group(1)) <= 60)
+                if r.status_code == 429 and attempt < 2 and per_minute:
+                    await asyncio.sleep((int(delay.group(1)) if delay else 20) + 1)   # per-minute limit: wait it out
+                    continue
+                if r.status_code == 429:
+                    _gemini_dead.add(model)   # daily quota used up
+                log.warning("Gemini TTS %s: HTTP %s", model, r.status_code)
+                break
+    raise RuntimeError("all Gemini voices unavailable")
+
+
 async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
     scenes = [s for s in inp.get("scenes") or [] if any((ln.get("text") or "").strip() for ln in s.get("lines") or [])]
     cast_in = inp.get("characters") or []
     if not scenes or not cast_in:
         return "Give characters (the cast) and the scenes with their lines, then call again."
-    length_key = inp.get("length") if inp.get("length") in LENGTHS else "1 minute"
+    length_key = inp.get("length") if inp.get("length") in LENGTHS else "2 minutes"
     min_scenes, min_words = LENGTHS[length_key]
     words = sum(len((ln.get("text") or "").split()) for s in scenes for ln in s.get("lines") or [])
     if len(scenes) < min_scenes or words < min_words:
@@ -115,25 +166,78 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
     # 1) one voice clip per line, in the speaker's voice
     jobs = [(si, li, ln) for si, s in enumerate(scenes) for li, ln in enumerate(s.get("lines") or [])
             if (ln.get("text") or "").strip()]
-    gate = asyncio.Semaphore(3)
+    gate = asyncio.Semaphore(2)
     eleven_ok = [eleven]
 
-    async def speak(si: int, li: int, ln: dict):
+    # every character gets their own Google voice (a second man gets another man's voice, etc.)
+    gvoice, seen = {}, {}
+    for cid, c in cast.items():
+        options = GEMINI_VOICES[c["type"]]
+        gvoice[cid] = options[seen.get(c["type"], 0) % len(options)]
+        seen[c["type"]] = seen.get(c["type"], 0) + 1
+    gvoice["narrator"] = GEMINI_VOICES[f"narrator_{narrator_gender}"][0]
+    gemini_ok = [bool(os.getenv("GEMINI_API_KEY", "").strip())]
+
+    source: dict[tuple[int, int], str] = {}
+
+    def plausible(path: Path, text: str) -> bool:
+        """Catch empty / runaway clips: Bangla speech is roughly 0.25-1.1 s per word."""
+        n = max(1, len(text.split()))
+        return 0.25 * n <= _duration(path) <= 1.1 * n + 3
+
+    async def speak(si: int, li: int, ln: dict, force_free: bool = False):
         out = work / f"v{si}_{li}.mp3"
         text = ln["text"].strip()
-        g = gender(ln.get("speaker") or "narrator")
+        speaker = ln.get("speaker") if ln.get("speaker") in cast else "narrator"
+        g = gender(speaker)
+        mood = next((ch.get("emotion") for ch in scenes[si].get("characters") or [] if ch.get("id") == speaker), "neutral")
+        if (next((ch.get("pose") for ch in scenes[si].get("characters") or [] if ch.get("id") == speaker), "") == "cry"):
+            mood = "crying"
+        style = STYLE["narrator"] if speaker == "narrator" else STYLE.get(mood, STYLE["neutral"])
         async with gate:
+            if force_free:
+                source[(si, li)] = "free"
+                return await _voice(text, VOICES[g], out)
             if eleven_ok[0]:
                 vid = os.getenv(f"ELEVENLABS_VOICE_{g.upper()}", "") or \
                     {"male": "pNInz6obpgDQGcFmaJgB", "female": "21m00Tcm4TlvDq8ikWAM"}[g]
                 try:
-                    return await _eleven(text, vid, out)
+                    tm = await _eleven(text, vid, out)
+                    if plausible(out, text):
+                        source[(si, li)] = "eleven"
+                        return tm
+                    log.warning("ElevenLabs clip looks wrong (%.1fs); trying another voice", _duration(out))
                 except Exception as e:
                     log.warning("ElevenLabs failed, using the free voice from now on: %s", e)
                     eleven_ok[0] = False
+            if gemini_ok[0]:
+                try:
+                    for _ in range(2):
+                        tm = await _gemini_tts(text, gvoice[speaker], style, out)
+                        if plausible(out, text):
+                            source[(si, li)] = "google"
+                            return tm
+                        log.warning("Google clip looks wrong (%.1fs), retrying", _duration(out))
+                except Exception as e:
+                    log.warning("Google voices unavailable, using Microsoft voices: %s", e)
+                    gemini_ok[0] = False
+            source[(si, li)] = "free"
             return await _voice(text, VOICES[g], out)
 
     timings = await asyncio.gather(*(speak(si, li, ln) for si, li, ln in jobs))
+    # One voice per character for the whole video: if a quota ran out midway, redo that
+    # character's other lines in the fallback voice too, so nobody's voice changes.
+    def who(si: int, li: int) -> str:
+        sp = scenes[si]["lines"][li].get("speaker")
+        return sp if sp in cast else "narrator"
+    mixed = {who(si, li) for si, li, _ in jobs if source.get((si, li)) == "free"}
+    redo = [k for k, (si, li, ln) in enumerate(jobs) if who(si, li) in mixed and source.get((si, li)) != "free"]
+    if redo:
+        log.info("Re-voicing %d lines so each character keeps one voice", len(redo))
+        again = await asyncio.gather(*(speak(*jobs[k], force_free=True) for k in redo))
+        timings = list(timings)
+        for k, tm in zip(redo, again):
+            timings[k] = tm
     by_line = {(si, li): tm for (si, li, _), tm in zip(jobs, timings)}
 
     # 2) timeline: lines one after another, a short breath between them

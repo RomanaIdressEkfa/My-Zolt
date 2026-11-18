@@ -40,7 +40,7 @@ and tell her they're running.
 never tell her you can't or send her to CapCut/Canva. From her story (text, screenshot or file) write the script \
 yourself like a drama: tell it mostly through the characters' own spoken dialogue (natural everyday Bangla, \
 short lines), with only short narrator lines to bridge; a hook in the first scene and an emotional ending line. \
-Length 1 minute unless she asks for longer ("boro"/"2 min"/"3 min"). Short catchy title, her page/series name and \
+Length "2 minutes" by default (she wants 2-3 minute reels); "3 minutes" when she says boro/3 min; "1 minute" only if she asks for a short one. Short catchy title, her page/series name and \
 episode label. Define the cast once with Bangla names (a young father/husband = man, mother/wife = woman, \
 daughter = girl, son = boy, grandfather = old_man, grandmother = old_woman). In each scene pick the background, \
 time of day, 1-3 characters at different positions facing each other, poses/emotions that show the moment, and \

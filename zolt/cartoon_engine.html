@@ -6,7 +6,8 @@ html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:#000;
   font-family:'Hind Siliguri','Nirmala UI','Vrinda',sans-serif}
 #cam{position:absolute;inset:0;transform-origin:50% 62%}
 svg{position:absolute;left:0;top:0}
-#top{position:absolute;top:70px;left:0;right:0;text-align:center;z-index:5}
+#top{position:absolute;bottom:44px;right:40px;z-index:5;opacity:.55}
+#top .series{display:inline-block;background:rgba(255,255,255,.14);color:#fff;font-size:34px;font-weight:600;padding:8px 26px;border-radius:30px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);text-shadow:0 1px 4px rgba(0,0,0,.6);letter-spacing:1px}
 .series{display:inline-block;background:rgba(0,0,0,.55);color:#ffd84d;font-size:44px;font-weight:700;padding:8px 34px;border-radius:40px}
 .ep{display:inline-block;margin-left:14px;background:#e53935;color:#fff;font-size:44px;font-weight:700;padding:8px 30px;border-radius:40px}
 #sub{position:absolute;bottom:230px;left:60px;right:60px;text-align:center;z-index:5}
@@ -448,7 +449,7 @@ let DATA = null, cur = -1;
 function setup(data) {
   DATA = data;
   document.getElementById('top').innerHTML =
-    (data.series ? `<span class="series">${esc(data.series)}</span>` : '') + (data.episode ? `<span class="ep">${esc(data.episode)}</span>` : '');
+    data.series ? `<span class="series">${esc(data.series)}</span>` : '';   // small watermark, bottom right
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
 
