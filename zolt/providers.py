@@ -3,9 +3,11 @@ ProviderUnavailable when it can't answer (no quota, bad key, offline), so the
 router can move on to the next provider."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -15,11 +17,13 @@ from .config import CONFIG
 from .prompt import build_system_prompt
 from .tools import OPENAI_TOOL_SCHEMAS, TOOL_SCHEMAS, ToolContext, run_tool
 from . import tools_more  # noqa: F401  (registers the extra tools)
+from .tools import _openai_tool as _openai_tool_from
 
 log = logging.getLogger("zolt.providers")
 
 MAX_TOOL_ROUNDS = 25
 MAX_HISTORY_MESSAGES = 60  # start a fresh conversation after this many messages
+MAX_RATE_LIMIT_WAIT = 30  # seconds; a short per-minute limit is worth waiting out
 STEP_LIMIT_REPLY = "⚠️ কাজটা অনেক ধাপ নিচ্ছে, তাই থামলাম। ছোট ছোট করে আবার বলুন।"
 
 
@@ -133,6 +137,10 @@ def _to_openai_content(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
 class LiteLLMProvider(Provider):
     """Gemini, Groq, OpenRouter, Mistral, or any OpenAI-compatible service."""
 
+    def reset(self, chat_id: int) -> None:
+        super().reset(chat_id)
+        self.groups.pop(chat_id, None)
+
     def __init__(self, name: str, label: str, key_env: str, model_env: str,
                  default_model: str = "", base_env: str | None = None,
                  model_prefix: str = "") -> None:
@@ -140,6 +148,7 @@ class LiteLLMProvider(Provider):
         self.name, self.label = name, label
         self.key_env, self.model_env, self.base_env = key_env, model_env, base_env
         self.default_model, self.model_prefix = default_model, model_prefix
+        self.groups: dict[int, set[str]] = {}
 
     @property
     def models(self) -> list[str]:
@@ -167,7 +176,15 @@ class LiteLLMProvider(Provider):
 
         litellm.suppress_debug_info = True
 
+        from . import toolsets
+
         history = self._history(chat_id)
+        if not history:
+            self.groups.pop(chat_id, None)
+        text = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+        groups = self.groups.setdefault(chat_id, set()) | toolsets.groups_for(text)
+        self.groups[chat_id] = groups
+        load_tools = _openai_tool_from(toolsets.LOAD_TOOLS_SCHEMA)
         history.append({"role": "user", "content": _to_openai_content(content)})
         kwargs: dict[str, Any] = {"api_key": os.getenv(self.key_env, "").strip()}
         if self.base_env:
@@ -176,19 +193,28 @@ class LiteLLMProvider(Provider):
         for _ in range(MAX_TOOL_ROUNDS):
             response, errors = None, []
             for model in self.models:  # busy/retired model -> try the next one
-                try:
-                    response = await litellm.acompletion(
-                        model=model,
-                        messages=[{"role": "system", "content": build_system_prompt()}, *history],
-                        tools=OPENAI_TOOL_SCHEMAS,
-                        timeout=45,
-                        num_retries=0,
-                        **kwargs,
-                    )
+                for attempt in range(2):
+                    try:
+                        response = await litellm.acompletion(
+                            model=model,
+                            messages=[{"role": "system", "content": build_system_prompt()}, *history],
+                            tools=[*toolsets.select(OPENAI_TOOL_SCHEMAS, groups), load_tools],
+                            timeout=45,
+                            num_retries=0,
+                            **kwargs,
+                        )
+                        break
+                    except Exception as e:  # quota, bad key, overloaded, offline...
+                        log.warning("%s failed: %s: %s", model, type(e).__name__, str(e)[:200])
+                        wait = _retry_after(e)
+                        if attempt == 0 and wait is not None and wait <= MAX_RATE_LIMIT_WAIT:
+                            log.info("Waiting %.0fs for %s's rate limit", wait, model)
+                            await asyncio.sleep(wait + 1)
+                            continue
+                        errors.append(f"{model}: {type(e).__name__}" + (" (per-day)" if "per-day" in str(e) else ""))
+                        break
+                if response is not None:
                     break
-                except Exception as e:  # quota, bad key, overloaded, offline...
-                    log.warning("%s failed: %s: %s", model, type(e).__name__, str(e)[:200])
-                    errors.append(f"{model}: {type(e).__name__}")
             if response is None:
                 raise ProviderUnavailable("; ".join(errors))
 
@@ -202,14 +228,30 @@ class LiteLLMProvider(Provider):
             for call in tool_calls:
                 try:
                     args = json.loads(call.function.arguments or "{}")
-                    output, is_error = await run_tool(call.function.name, args, ctx)
+                    if call.function.name == "load_tools":
+                        group = str(args.get("group", ""))
+                        groups.add(group)
+                        names = sorted(toolsets.allowed_names({group}))
+                        output, is_error = f"Loaded '{group}' tools: {', '.join(names)}. Use them now.", False
+                    else:
+                        output, is_error = await run_tool(call.function.name, args, ctx)
                 except json.JSONDecodeError:
                     output, is_error = "Invalid JSON arguments; call the tool again.", True
                 history.append({"role": "tool", "tool_call_id": call.id,
-                                "content": ("ERROR: " if is_error else "") + output[:20000]})
+                                "content": ("ERROR: " if is_error else "") + output[:8000]})
 
         self.reset(chat_id)
         return STEP_LIMIT_REPLY
+
+
+def _retry_after(error: Exception) -> float | None:
+    """Seconds a rate-limited service asks us to wait ("try again in 7.5s" / "1m2s"), if it says."""
+    if "ratelimit" not in type(error).__name__.lower() and "429" not in str(error)[:300]:
+        return None
+    m = re.search(r"(?:try again|retry) in (?:(\d+)m)?([\d.]+)s", str(error), re.I)
+    if not m:
+        return None
+    return int(m.group(1) or 0) * 60 + float(m.group(2))
 
 
 def build_providers() -> dict[str, Provider]:

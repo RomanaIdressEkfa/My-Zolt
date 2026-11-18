@@ -363,7 +363,11 @@ async def _post_init(app: Application) -> None:
         ])
     except Exception as e:
         log.warning("Could not set command menu: %s", e)
-    if CONFIG.allowed_user_id:
+    import time as _time
+
+    import psutil
+    just_booted = _time.time() - psutil.boot_time() < 15 * 60
+    if CONFIG.allowed_user_id and just_booted:  # announce only after the PC starts, not on every restart
         try:
             await app.bot.send_message(CONFIG.allowed_user_id, f"⚡ {CONFIG.agent_name} চালু হয়েছে, ম্যাম।",
                                        reply_markup=KEYBOARD)

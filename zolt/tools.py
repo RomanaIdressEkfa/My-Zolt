@@ -23,6 +23,7 @@ class ToolContext:
     chat_id: int
     approvals: Approvals
     tools_run: list[str] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)  # "tool(args) -> result" lines, for handing a task to another model
     app: Any = None  # telegram Application, for reminders
 
     async def confirm(self, question: str, allow_trust: bool = True) -> bool:
@@ -756,6 +757,7 @@ async def run_tool(name: str, tool_input: dict, ctx: ToolContext) -> tuple[str, 
         result, is_error = await handler(tool_input, ctx), False
     except Exception as e:  # report tool failures back to the model instead of crashing
         result, is_error = f"{type(e).__name__}: {e}", True
+    ctx.steps.append(f"{name}({str(tool_input)[:300]}) -> {'ERROR: ' if is_error else ''}{str(result)[:600]}")
     try:
         from .history import log_action
         log_action(name, tool_input, result, is_error)
