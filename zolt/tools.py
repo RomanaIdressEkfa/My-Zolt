@@ -332,12 +332,29 @@ async def search_files(inp: dict, ctx: ToolContext) -> str:
         root = _project_path(inp["project"])
     except ValueError as e:
         return str(e)
-    code, out = await _run(["git", "grep", "-n", "-I", "--untracked", "-i", inp["text"]], cwd=root)
+    sub = (inp.get("path") or "").strip().replace("\\", "/").strip("/")
+    cmd = ["git", "grep", "-n", "-I", "--untracked", "-i", "-F", inp["text"]]
+    code, out = await _run(cmd + (["--", sub] if sub else []), cwd=root)
     if code not in (0, 1) or "not a git repository" in out:
-        code, out = await _run(["findstr", "/s", "/n", "/i", "/c:" + inp["text"], "*.php", "*.js", "*.ts",
-                                "*.vue", "*.blade.php", "*.css", "*.json", "*.md", "*.py", "*.html"], cwd=root)
-    lines = out.splitlines()
-    return "\n".join(lines[:150]) + (f"\n... {len(lines) - 150} more" if len(lines) > 150 else "") or "No matches."
+        if sub and (root / sub).is_file():
+            code, out = await _run(["findstr", "/n", "/i", "/c:" + inp["text"], sub], cwd=root)
+            out = "\n".join(f"{sub}:{line}" for line in out.splitlines())
+        else:
+            code, out = await _run(["findstr", "/s", "/n", "/i", "/c:" + inp["text"], "*.php", "*.js", "*.ts",
+                                    "*.vue", "*.css", "*.json", "*.md", "*.py", "*.html"],
+                                   cwd=root / sub if sub else root)
+    lines = [line for line in out.splitlines() if line.strip()]
+    if not lines:
+        return "No matches (0 lines)."
+    per_file: dict[str, int] = {}
+    for line in lines:
+        name = line.split(":", 1)[0]
+        per_file[name] = per_file.get(name, 0) + 1
+    top = sorted(per_file.items(), key=lambda kv: -kv[1])[:20]
+    summary = (f"{len(lines)} matching line(s) in {len(per_file)} file(s): "
+               + ", ".join(f"{name}={count}" for name, count in top))
+    shown = "\n".join(lines[:150]) + (f"\n... {len(lines) - 150} more" if len(lines) > 150 else "")
+    return summary + "\n\n" + shown
 
 
 # ---------------------------------------------------------------- web
@@ -643,8 +660,13 @@ TOOLS: list[tuple[dict[str, Any], Handler]] = [
     }, write_file),
     ({
         "name": "search_in_project",
-        "description": "Search a project's files for a text (case-insensitive). Returns file:line matches.",
-        "input_schema": _schema({"project": {"type": "string"}, "text": {"type": "string"}}, ["project", "text"]),
+        "description": "Search a project's files for a text (case-insensitive). Returns the exact number of "
+                       "matching lines per file and in total, then the file:line matches. Use it to COUNT things "
+                       "(routes, usages) instead of counting by eye.",
+        "input_schema": _schema({"project": {"type": "string"}, "text": {"type": "string"},
+                                 "path": {"type": "string", "description": "File or folder inside the project to "
+                                          "limit the search to, e.g. routes/web.php; empty = whole project"}},
+                                ["project", "text", "path"]),
     }, search_files),
     ({
         "name": "web_search",

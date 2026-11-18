@@ -12,7 +12,7 @@ from typing import Any
 
 GROUPS: dict[str, set[str]] = {
     "core": {"list_projects", "open_app", "open_website", "open_project_folder", "take_screenshot",
-             "web_search", "fetch_url", "remember", "set_reminder", "system_status", "load_tools"},
+             "web_search", "fetch_url", "remember", "set_reminder", "system_status", "show_history", "load_tools"},
     "files": {"list_dir", "read_file", "edit_file", "write_file", "search_in_project", "read_document",
               "make_document", "send_file", "search_my_documents", "undo_changes", "show_history"},
     "code": {"git_status", "git_push", "git_diff", "git_branch", "create_pull_request", "run_tests",

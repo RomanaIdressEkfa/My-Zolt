@@ -49,6 +49,13 @@ TASKS = [
     ("1 ghonta por pc ta bondho kore dio", {"power_action", "set_reminder"}, {"run_command"}, []),
     ("ajke tumi ki ki korecho?", {"show_history"}, set(), []),
     ("amar screen er ekta chobi pathao", {"take_screenshot"}, {"browser_screenshot"}, []),
+    # harder, multi-step
+    ("Apollo er routes/web.php e koyta Route:: ache gune bolo",
+     {"read_file", "search_in_project"}, {"edit_file", "write_file"}, ["75"]),
+    ("Apollo te 'feature/payment' name e notun branch khulo", {"git_branch"}, {"git_push", "edit_file"}, []),
+    ("kal bikel 5 tay client meeting calendar e add koro", {"calendar"}, {"run_command"}, []),
+    ("amar reminder gula dekhao", {"list_reminders"}, {"set_reminder"}, []),
+    ("Apollo er README ta pore 2 line e bolo project ta ki", {"read_file", "read_document"}, {"edit_file"}, []),
 ]
 
 SIMULATED = {"open_app", "open_website", "open_project_folder", "power_action", "run_command", "git_push",
@@ -57,6 +64,9 @@ SIMULATED = {"open_app", "open_website", "open_project_folder", "power_action", 
              "desktop_type", "desktop_hotkey", "send_file", "make_document", "gmail", "calendar", "deploy_project",
              "call_webhook", "start_parallel_task", "edit_file", "write_file", "undo_changes", "clipboard",
              "watch_website", "take_screenshot", "create_pull_request", "git_branch", "db_query", "set_deploy_target"}
+
+
+BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
 
 class _AutoYes:
@@ -102,7 +112,8 @@ async def run_model(key_env: str, model: str) -> dict:
             points += 1
         if reply.strip() and not has_foreign_script(reply):
             points += 1
-        if all(w.lower() in reply.lower() for w in words):
+        plain = reply.lower().translate(BANGLA_DIGITS)  # "২৬ GB" counts as "26 GB"
+        if all(w.lower() in plain for w in words):
             points += 1
         if points < 5:
             notes.append(f"#{i + 1}:{points}/5 used={sorted(used) or '-'}")
