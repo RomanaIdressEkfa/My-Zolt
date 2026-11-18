@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import subprocess
 import time
@@ -36,15 +37,52 @@ PROPS = ["rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone
          "sewing", "school_bag"]
 
 
+LENGTHS = {"1 minute": (6, 130), "2 minutes": (11, 260), "3 minutes": (16, 390)}  # min scenes, min words
+MALE = {"man", "boy", "old_man"}
+
+
+async def _eleven(text: str, voice_id: str, out: Path) -> list[tuple[float, float, str]]:
+    """ElevenLabs voice (natural, free tier ~10k characters a month). Returns sentence timings."""
+    import base64
+
+    import httpx
+    model = os.getenv("ELEVENLABS_MODEL", "eleven_v3")
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps",
+                              params={"output_format": "mp3_44100_128"},
+                              headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY", "").strip()},
+                              json={"text": text, "model_id": model})
+    if r.status_code != 200:
+        raise RuntimeError(f"ElevenLabs {r.status_code}: {r.text[:200]}")
+    body = r.json()
+    out.write_bytes(base64.b64decode(body["audio_base64"]))
+    al = body.get("alignment") or {}
+    chars, starts, ends = al.get("characters") or [], al.get("character_start_times_seconds") or [], \
+        al.get("character_end_times_seconds") or []
+    sentences, buf, s0 = [], "", None
+    for ch, a, b in zip(chars, starts, ends):
+        s0 = a if s0 is None else s0
+        buf += ch
+        if ch in "।?!.":
+            sentences.append((s0, b, buf.strip()))
+            buf, s0 = "", None
+    if buf.strip() and s0 is not None:
+        sentences.append((s0, ends[-1], buf.strip()))
+    return sentences
+
+
 async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
-    scenes = [s for s in inp.get("scenes") or [] if (s.get("narration") or "").strip()]
+    scenes = [s for s in inp.get("scenes") or [] if any((ln.get("text") or "").strip() for ln in s.get("lines") or [])]
     cast_in = inp.get("characters") or []
     if not scenes or not cast_in:
-        return "Give characters (the cast) and 6-9 scenes, then call again."
-    words = sum(len(s["narration"].split()) for s in scenes)
-    if len(scenes) < 6 or words < 120:
-        return (f"Script too short for a 1-minute reel: {len(scenes)} scenes, {words} words. Rewrite with 6-9 scenes "
-                "and 140-170 Bangla words of narration in total, then call make_cartoon_video again.")
+        return "Give characters (the cast) and the scenes with their lines, then call again."
+    length_key = inp.get("length") if inp.get("length") in LENGTHS else "1 minute"
+    min_scenes, min_words = LENGTHS[length_key]
+    words = sum(len((ln.get("text") or "").split()) for s in scenes for ln in s.get("lines") or [])
+    if len(scenes) < min_scenes or words < min_words:
+        return (f"Script too short for {length_key}: {len(scenes)} scenes, {words} words. Rewrite with at least "
+                f"{min_scenes} scenes and about {min_words + 30} Bangla words in total (keep the story, add dialogue, "
+                "detail and emotion), then call make_cartoon_video again.")
     cast = {}
     for i, c in enumerate(cast_in):
         ctype = c.get("type") if c.get("type") in TYPES else "man"
@@ -52,60 +90,90 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
         if ctype == "old_man":
             cloth = "#f4f1e8"
         cast[c.get("id") or f"c{i}"] = {"type": ctype, "cloth": cloth, "cloth2": SECOND[ctype], "seed": i + 1,
-                                        "mustache": ctype == "man"}
-    unknown = sorted({ch.get("id") for s in scenes for ch in s.get("characters") or []} - set(cast))
+                                        "mustache": ctype == "man", "name": (c.get("name") or "").strip()}
+    used = {ch.get("id") for s in scenes for ch in s.get("characters") or []} | \
+           {ln.get("speaker") for s in scenes for ln in s.get("lines") or []}
+    unknown = sorted(x for x in used - set(cast) - {"narrator", None})
     if unknown:
-        return f"These scene character ids are not in characters: {', '.join(unknown)}. Use the cast ids exactly."
+        return f"These ids are not in characters: {', '.join(unknown)}. Use the cast ids exactly (or 'narrator')."
 
     title = (inp.get("title") or "গল্প").strip()
     series = (inp.get("series_name") or "").strip()
     episode = (inp.get("episode") or "").strip()
-    voice = VOICES.get((inp.get("voice") or "female").lower(), VOICES["female"])
+    narrator_gender = "male" if (inp.get("voice") or "").lower() == "male" else "female"
     work = VIDEO_DIR / ("cartoon-" + time.strftime("%Y%m%d-%H%M%S"))
     work.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
+    eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
     if ctx.bot:
-        await ctx.bot.send_message(ctx.chat_id, f"🎬 কার্টুন ভিডিও বানানো শুরু করলাম ({len(scenes)}টা দৃশ্য)। "
-                                                "আনুমানিক ৩-৪ মিনিট লাগবে, শেষ হলে এখানেই পাঠাব, ম্যাম।")
+        await ctx.bot.send_message(ctx.chat_id, f"🎬 কার্টুন ভিডিও ({length_key}, {len(scenes)}টা দৃশ্য) বানানো শুরু করলাম। "
+                                                f"আনুমানিক {3 + 2 * list(LENGTHS).index(length_key)} মিনিট লাগবে, ম্যাম।")
 
-    # 1) voices (2 at a time; the free service fails now and then and _voice retries)
-    gate = asyncio.Semaphore(2)
+    def gender(speaker: str) -> str:
+        return ("male" if cast[speaker]["type"] in MALE else "female") if speaker in cast else narrator_gender
 
-    async def speak(i: int, s: dict):
+    # 1) one voice clip per line, in the speaker's voice
+    jobs = [(si, li, ln) for si, s in enumerate(scenes) for li, ln in enumerate(s.get("lines") or [])
+            if (ln.get("text") or "").strip()]
+    gate = asyncio.Semaphore(3)
+    eleven_ok = [eleven]
+
+    async def speak(si: int, li: int, ln: dict):
+        out = work / f"v{si}_{li}.mp3"
+        text = ln["text"].strip()
+        g = gender(ln.get("speaker") or "narrator")
         async with gate:
-            return await _voice(s["narration"].strip(), voice, work / f"voice{i}.mp3")
+            if eleven_ok[0]:
+                vid = os.getenv(f"ELEVENLABS_VOICE_{g.upper()}", "") or \
+                    {"male": "pNInz6obpgDQGcFmaJgB", "female": "21m00Tcm4TlvDq8ikWAM"}[g]
+                try:
+                    return await _eleven(text, vid, out)
+                except Exception as e:
+                    log.warning("ElevenLabs failed, using the free voice from now on: %s", e)
+                    eleven_ok[0] = False
+            return await _voice(text, VOICES[g], out)
 
-    timings = await asyncio.gather(*(speak(i, s) for i, s in enumerate(scenes)))
+    timings = await asyncio.gather(*(speak(si, li, ln) for si, li, ln in jobs))
+    by_line = {(si, li): tm for (si, li, _), tm in zip(jobs, timings)}
 
-    # 2) timeline
-    t, subs, timeline = 0.0, [], []
-    for i, s in enumerate(scenes):
-        spoken = _duration(work / f"voice{i}.mp3")
-        length = spoken + GAP + (0.6 if i == 0 else 0)   # a beat for the title on the first scene
-        offset = t + (0.6 if i == 0 else 0)
-        for a, b, text in _subtitle_chunks(s["narration"].strip(), timings[i], spoken):
-            subs.append([round(offset + a, 2), round(offset + b, 2), text])
-        timeline.append({"start": round(t, 3), "end": round(t + length, 3), "audio_offset": offset,
+    # 2) timeline: lines one after another, a short breath between them
+    t, timeline, clips = 0.0, [], []
+    for si, s in enumerate(scenes):
+        start = t
+        t += 0.9 if si == 0 else 0.25        # room for the title card / scene fade-in
+        lines = []
+        for li, ln in enumerate(s.get("lines") or []):
+            if (si, li) not in by_line:
+                continue
+            path = work / f"v{si}_{li}.mp3"
+            spoken = _duration(path)
+            speaker = ln.get("speaker") if ln.get("speaker") in cast else "narrator"
+            chunks = [[round(t + a, 2), round(t + b + .12, 2), txt] for a, b, txt in
+                      _subtitle_chunks(ln["text"].strip(), by_line[(si, li)], spoken, max_chars=34)]
+            lines.append({"speaker": speaker, "start": round(t, 2), "end": round(t + spoken + .2, 2), "chunks": chunks})
+            clips.append((path, t))
+            t += spoken + 0.3
+        t += 0.35
+        timeline.append({"start": round(start, 3), "end": round(t, 3), "lines": lines,
                          "background": s.get("background") if s.get("background") in BACKGROUNDS else "home",
                          "time": s.get("time_of_day") if s.get("time_of_day") in ("day", "evening", "night") else "day",
                          "camera": s.get("camera") or "zoom_in", "weather": s.get("weather") or "none",
                          "props": [p for p in s.get("props") or [] if p in PROPS],
                          "characters": [{"id": ch.get("id"), "pose": ch.get("pose") if ch.get("pose") in POSES else "stand",
                                          "emotion": ch.get("emotion") if ch.get("emotion") in EMOTIONS else "neutral",
-                                         "position": ch.get("position") or "center", "facing": ch.get("facing") or "right",
-                                         "talking": bool(ch.get("talking"))} for ch in (s.get("characters") or [])[:3]]})
-        t += length
+                                         "position": ch.get("position") or "center", "facing": ch.get("facing") or "right"}
+                                        for ch in (s.get("characters") or [])[:3]]})
     total = t
-    data = {"cast": cast, "scenes": timeline, "subs": subs, "title": title, "episode": episode, "series": series,
+    data = {"cast": cast, "scenes": timeline, "subs": [], "title": title, "episode": episode, "series": series,
             "total": total}
 
-    # 3) audio track: each scene's voice placed at its offset
+    # 3) audio track: every clip placed at its start time
     inputs, chain = [], []
-    for i, sc in enumerate(timeline):
-        inputs += ["-i", str(work / f"voice{i}.mp3")]
-        ms = int(sc["audio_offset"] * 1000)
-        chain.append(f"[{i}:a]adelay={ms}|{ms}[a{i}]")
-    chain.append("".join(f"[a{i}]" for i in range(len(timeline))) + f"amix=inputs={len(timeline)}:normalize=0,"
+    for k, (path, at) in enumerate(clips):
+        inputs += ["-i", str(path)]
+        ms = int(at * 1000)
+        chain.append(f"[{k}:a]aresample=44100,adelay={ms}|{ms}[a{k}]")
+    chain.append("".join(f"[a{k}]" for k in range(len(clips))) + f"amix=inputs={len(clips)}:normalize=0,"
                  f"apad=whole_dur={total:.2f}[aout]")
     audio = work / "audio.m4a"
     await asyncio.to_thread(_run_ffmpeg, [*inputs, "-filter_complex", ";".join(chain), "-map", "[aout]",
@@ -158,42 +226,51 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
             f"{took}s). Cover: {cover}. Tell her it is ready to post as a Facebook Reel.")
 
 
-_CHAR = {"type": "object", "additionalProperties": False, "required": ["id", "type", "clothes_color"],
+_CHAR = {"type": "object", "additionalProperties": False, "required": ["id", "type", "name", "clothes_color"],
          "properties": {"id": {"type": "string", "description": "short English id used in scenes, e.g. father"},
                         "type": {"type": "string", "enum": TYPES},
+                        "name": {"type": "string", "description": "Bangla name or role shown on speech bubbles, e.g. 'বাবা', 'মীরা'"},
                         "clothes_color": {"type": "string", "enum": list(CLOTH)}}}
 _IN_SCENE = {"type": "object", "additionalProperties": False,
-             "required": ["id", "pose", "emotion", "position", "facing", "talking"],
+             "required": ["id", "pose", "emotion", "position", "facing"],
              "properties": {"id": {"type": "string"}, "pose": {"type": "string", "enum": POSES},
                             "emotion": {"type": "string", "enum": EMOTIONS},
                             "position": {"type": "string", "enum": ["left", "center", "right"]},
-                            "facing": {"type": "string", "enum": ["left", "right"]},
-                            "talking": {"type": "boolean", "description": "true while this character's words are the narration"}}}
+                            "facing": {"type": "string", "enum": ["left", "right"]}}}
+_LINE = {"type": "object", "additionalProperties": False, "required": ["speaker", "text"],
+         "properties": {"speaker": {"type": "string", "description": "'narrator' or the id of a character IN this scene"},
+                        "text": {"type": "string", "description": "Bangla. Characters speak natural spoken dialogue; "
+                                 "the narrator only bridges (short). Keep each line under ~20 words."}}}
 _SCENE = {"type": "object", "additionalProperties": False,
-          "required": ["narration", "background", "time_of_day", "characters", "props", "camera"],
-          "properties": {"narration": {"type": "string", "description": "What the voice says in this scene (Bangla)."},
+          "required": ["lines", "background", "time_of_day", "characters", "props", "camera"],
+          "properties": {"lines": {"type": "array", "items": _LINE, "minItems": 1,
+                                   "description": "What is said in this scene, in order: mostly the characters' own "
+                                                  "dialogue (shown as speech bubbles), a little narrator"},
                          "background": {"type": "string", "enum": BACKGROUNDS},
                          "time_of_day": {"type": "string", "enum": ["day", "evening", "night"]},
                          "characters": {"type": "array", "items": _IN_SCENE, "maxItems": 3,
-                                        "description": "1-3 characters; put them at different positions, facing each other"},
+                                        "description": "1-3 characters; different positions, facing each other"},
                          "props": {"type": "array", "items": {"type": "string", "enum": PROPS}},
                          "camera": {"type": "string", "enum": ["zoom_in", "zoom_out", "pan_left", "pan_right", "still"]}}}
 
 register_tools([({
     "name": "make_cartoon_video",
-    "description": "Her preferred video style. Make a 2D cartoon story reel (Facebook Reel / YouTube Short, 1080x1920 "
-                   "mp4): code-drawn Bangladeshi cartoon characters that look the same in every scene, home/kitchen/"
-                   "street/village/shop/office/hospital/school backgrounds, poses and emotions (walk, cry with tears, "
-                   "angry, happy, sew, give...), talking mouths, Bangla voiceover and subtitles, title card and cover. "
-                   "Sends video + cover to her on Telegram (~3-4 minutes). For ~60 s write 6-9 scenes, 140-170 Bangla "
-                   "words in total, strong hook first, emotional last line.",
+    "description": "Her preferred video style. Make a 2D cartoon story reel (1080x1920 mp4 for Facebook Reels / "
+                   "YouTube Shorts): code-drawn Bangladeshi cartoon characters that look the same in every scene, "
+                   "home/kitchen/street/village/shop/office/hospital/school backgrounds, poses and emotions (walk, cry "
+                   "with tears, angry, happy, sew, give...). The story is told mainly through the characters' DIALOGUE "
+                   "in comic speech bubbles, each character in their own voice (male/female), with short narrator "
+                   "lines in a story box. Title card + cover; sent to her on Telegram. Length: 1 minute = 6-9 scenes "
+                   "~160 words; 2 minutes = 11-16 scenes ~300 words; 3 minutes = 16-24 scenes ~430 words. Strong "
+                   "hook first, emotional ending.",
     "input_schema": _schema({
         "title": {"type": "string", "description": "Short catchy Bangla title"},
         "series_name": {"type": "string", "description": "Page/series name on top, e.g. Hidden Chapters"},
         "episode": {"type": "string", "description": "e.g. 'পর্ব ১'; may be empty"},
-        "voice": {"type": "string", "enum": ["female", "male"]},
+        "length": {"type": "string", "enum": list(LENGTHS), "description": "default 1 minute unless she asks"},
+        "voice": {"type": "string", "enum": ["female", "male"], "description": "narrator's voice"},
         "file_name": {"type": "string", "description": "Short English file name"},
         "characters": {"type": "array", "items": _CHAR, "minItems": 1, "maxItems": 6},
         "scenes": {"type": "array", "items": _SCENE, "minItems": 1},
-    }, ["title", "series_name", "episode", "voice", "file_name", "characters", "scenes"]),
+    }, ["title", "series_name", "episode", "length", "voice", "file_name", "characters", "scenes"]),
 }, make_cartoon_video)])

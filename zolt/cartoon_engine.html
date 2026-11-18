@@ -9,7 +9,12 @@ svg{position:absolute;left:0;top:0}
 #top{position:absolute;top:70px;left:0;right:0;text-align:center;z-index:5}
 .series{display:inline-block;background:rgba(0,0,0,.55);color:#ffd84d;font-size:44px;font-weight:700;padding:8px 34px;border-radius:40px}
 .ep{display:inline-block;margin-left:14px;background:#e53935;color:#fff;font-size:44px;font-weight:700;padding:8px 30px;border-radius:40px}
-#sub{position:absolute;bottom:250px;left:50px;right:50px;text-align:center;z-index:5}
+#sub{position:absolute;bottom:230px;left:60px;right:60px;text-align:center;z-index:5}
+#sub #narr{display:inline-block;text-shadow:none;background:linear-gradient(#fff8e6,#f6e2b8);color:#3b2410;font-size:56px;font-weight:600;line-height:1.45;padding:22px 38px;border-radius:26px;border:5px solid #8a5a36;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#bubble{position:absolute;z-index:5;max-width:660px;background:#fff;color:#1d1d1d;font-size:56px;font-weight:700;line-height:1.4;padding:22px 34px;border-radius:44px;border:6px solid #2a1a12;text-align:center;box-shadow:0 10px 26px rgba(0,0,0,.35)}
+#bubble:after{content:'';position:absolute;bottom:-46px;left:var(--tail,50%);margin-left:-22px;border:22px solid transparent;border-top:36px solid #2a1a12}
+#bubble:before{content:'';position:absolute;bottom:-33px;left:var(--tail,50%);margin-left:-16px;border:16px solid transparent;border-top:28px solid #fff;z-index:1}
+.who{display:block;font-size:36px;color:#b5462e;margin-bottom:4px}
 #sub span{background:rgba(0,0,0,.66);color:#fff;font-size:62px;font-weight:700;line-height:1.55;padding:8px 26px;
   border-radius:18px;box-decoration-break:clone;-webkit-box-decoration-break:clone;text-shadow:0 3px 8px rgba(0,0,0,.6)}
 #title{position:absolute;left:40px;right:40px;top:300px;text-align:center;z-index:6}
@@ -20,7 +25,7 @@ svg{position:absolute;left:0;top:0}
 <body>
 <div id="cam"><svg id="bg" width="1080" height="1920" viewBox="0 0 1080 1920"></svg>
 <svg id="fg" width="1080" height="1920" viewBox="0 0 1080 1920"></svg></div>
-<div id="top"></div><div id="sub"></div><div id="title"></div><div id="fade"></div>
+<div id="top"></div><div id="sub"></div><div id="bubble" style="display:none"></div><div id="title"></div><div id="fade"></div>
 <script>
 "use strict";
 const OL = '#2a1a12';            // outline colour
@@ -467,9 +472,12 @@ function render(t, cover = false) {
   const held = props.filter(p => HOLDABLE.has(p));
   let heldUsed = false, onTop = '';
   const chars = (sc.characters || []).map(c => ({...c, p: cast[c.id]})).filter(c => c.p);
+  const ln = cover ? null : (sc.lines || []).find(l => t >= l.start && t < l.end);
+  const chunk = ln ? ln.chunks.find(c => t >= c[0] && t < c[1]) : null;
+  const placed = {};
   const holder = (chars.find(c => c.pose === 'give') || chars.find(c => c.pose !== 'sew') || {}).id;
   chars.forEach((c, k) => {
-    const st = {pose: c.pose || 'stand', emotion: c.pose === 'cry' ? 'crying' : (c.emotion || 'neutral'), talking: !!c.talking && c.talking !== 'false', t: lt};
+    const st = {pose: c.pose || 'stand', emotion: c.pose === 'cry' ? 'crying' : (c.emotion || 'neutral'), talking: !!(ln && chunk && ln.speaker === c.id), t: lt};
     const fig = person(c.p, st);
     let x = POS[c.position] ?? POS.center;
     const dir = c.facing === 'left' ? -1 : 1;
@@ -482,6 +490,7 @@ function render(t, cover = false) {
       onTop += `<g transform="translate(${hx} ${hy}) scale(${scale})">${PROPS[held[0]]('', lt)}</g>`;
       heldUsed = true;
     }
+    placed[c.id] = {x, top: GROUND - scale * (st.pose === 'sit' || st.pose === 'sew' ? 560 : 740)};
     o += `<g transform="translate(${x} ${GROUND}) scale(${dir * scale} ${scale})">` +
       `<ellipse cx="0" cy="4" rx="95" ry="16" fill="#000" opacity=".18"/>` + fig.svg + extra + `</g>`;
   });
@@ -499,9 +508,24 @@ function render(t, cover = false) {
   document.getElementById('cam').style.transform = `translateX(${cam[1]}px) scale(${cam[0]})`;
 
   // subtitles, title, fades
-  const subEl = document.getElementById('sub');
-  const line = cover ? null : DATA.subs.find(s => t >= s[0] && t < s[1]);
-  subEl.innerHTML = line ? `<span>${esc(line[2])}</span>` : '';
+  const subEl = document.getElementById('sub'), bub = document.getElementById('bubble');
+  subEl.innerHTML = ''; bub.style.display = 'none';
+  if (chunk) {
+    const who = placed[ln.speaker];
+    if (!who) {
+      subEl.innerHTML = `<span id="narr">${esc(chunk[2])}</span>`;
+    } else {   // speech bubble above the speaker, following the camera
+      const name = (DATA.cast[ln.speaker] || {}).name;
+      bub.innerHTML = (name ? `<span class="who">${esc(name)}</span>` : '') + esc(chunk[2]);
+      bub.style.display = 'block';
+      const sx = 540 + (who.x - 540) * cam[0] + cam[1], sy = 1190 + (who.top - 1190) * cam[0];
+      const w = bub.offsetWidth, h = bub.offsetHeight;
+      const left = Math.max(30, Math.min(1050 - w, sx - w / 2));
+      bub.style.left = left + 'px';
+      bub.style.top = Math.max(150, sy - h - 40) + 'px';
+      bub.style.setProperty('--tail', Math.max(50, Math.min(w - 50, sx - left)) + 'px');
+    }
+  }
   const titleEl = document.getElementById('title');
   const showTitle = cover || t < 3.2;
   titleEl.innerHTML = showTitle ? `<b>${esc(DATA.title)}</b>` + (DATA.episode ? `<i>${esc(DATA.episode)}</i>` : '') : '';
