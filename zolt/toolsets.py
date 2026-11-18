@@ -22,6 +22,7 @@ GROUPS: dict[str, set[str]] = {
                 "browser_scroll", "browser_back", "browser_screenshot"},
     "desktop": {"desktop_windows", "desktop_read", "desktop_click", "desktop_type", "desktop_hotkey", "clipboard"},
     "google": {"gmail", "calendar"},
+    "media": {"make_video", "make_document", "send_file"},
     "system": {"power_action", "watch_website", "list_reminders", "cancel_reminder", "forget",
                "start_parallel_task", "call_webhook", "show_history", "undo_changes"},
 }
@@ -33,6 +34,7 @@ KEYWORDS: dict[str, str] = {
             r"artisan|composer|npm|command|chalao|run|install|migrat|bug|error|fix|thik|feature|laravel|code|kod",
     "browser": r"browser|login|fiverr|facebook|\bfb\b|linkedin|upwork|click|form|site e|website e|page e|পেজ",
     "desktop": r"desktop|window|app er|clipboard|copy|paste|photoshop|excel e|word e|notepad e",
+    "media": r"video|vdo|reel|reels|short|tiktok|youtube|ভিডিও|ভিডিও|রিল|গল্প|golpo|story|kahini|কাহিনি",
     "google": r"e-?mail|mail|gmail|inbox|calendar|meeting|event|মেইল|ইমেইল|মিটিং",
     "system": r"shutdown|restart|\boff\b|bondho|lock|sleep|reminder|cancel|monitor|down|watch|webhook|n8n|"
               r"parallel|ek ?sathe|background|forget|bhule|বন্ধ|রিস্টার্ট|মনে করি",
@@ -42,7 +44,7 @@ LOAD_TOOLS_SCHEMA: dict[str, Any] = {
     "name": "load_tools",
     "description": "Load more tools when the ones you have can't do the job. Groups: files (read/edit/create files, "
                    "documents, PDFs, undo), code (git, tests, PRs, run commands, database, deploy), browser (operate "
-                   "websites yourself), desktop (control desktop apps, clipboard), google (Gmail, Calendar), system "
+                   "websites yourself), desktop (control desktop apps, clipboard), google (Gmail, Calendar), media (make videos/reels from a story), system "
                    "(power off/restart/lock, reminders list/cancel, website monitors, webhooks/n8n, parallel tasks).",
     "input_schema": {"type": "object", "additionalProperties": False, "required": ["group"],
                      "properties": {"group": {"type": "string", "enum": [g for g in GROUPS if g != "core"]}}},

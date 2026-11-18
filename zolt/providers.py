@@ -17,6 +17,7 @@ from .config import CONFIG
 from .prompt import build_system_prompt
 from .tools import OPENAI_TOOL_SCHEMAS, TOOL_SCHEMAS, ToolContext, run_tool
 from . import tools_more  # noqa: F401  (registers the extra tools)
+from . import video  # noqa: F401  (registers make_video)
 from .tools import _openai_tool as _openai_tool_from
 
 log = logging.getLogger("zolt.providers")
@@ -24,6 +25,11 @@ log = logging.getLogger("zolt.providers")
 MAX_TOOL_ROUNDS = 25
 MAX_HISTORY_MESSAGES = 60  # start a fresh conversation after this many messages
 MAX_RATE_LIMIT_WAIT = 30  # seconds; a short per-minute limit is worth waiting out
+PROMISE_RE = re.compile(r"শুরু কর(লাম|ছি|ে দিলাম|ে দিচ্ছি)|পাঠিয়ে দিচ্ছি|পাঠাচ্ছি|তৈরি করছি|বানাচ্ছি|করে দিচ্ছি|"
+                        r"একটু পরেই|কিছুক্ষণের মধ্যে|i(?:'ll| will) (?:now )?(?:start|send|create|make)|starting now",
+                        re.IGNORECASE)
+NUDGE = ("You said you are doing it, but you did not call any tool, so nothing happened. Call the right tool now "
+         "with complete arguments. If you truly cannot, say so plainly instead.")
 STEP_LIMIT_REPLY = "⚠️ কাজটা অনেক ধাপ নিচ্ছে, তাই থামলাম। ছোট ছোট করে আবার বলুন।"
 
 
@@ -190,6 +196,7 @@ class LiteLLMProvider(Provider):
         if self.base_env:
             kwargs["api_base"] = os.getenv(self.base_env, "").strip()
 
+        tools_before, nudged = len(ctx.tools_run), False
         for _ in range(MAX_TOOL_ROUNDS):
             response, errors = None, []
             for model in self.models:  # busy/retired model -> try the next one
@@ -223,7 +230,14 @@ class LiteLLMProvider(Provider):
             history.append(message.model_dump(exclude_none=True))
             tool_calls = message.tool_calls or []
             if not tool_calls:
-                return (message.content or "").strip() or "✅ কাজ শেষ।"
+                reply = (message.content or "").strip()
+                if not nudged and len(ctx.tools_run) == tools_before and PROMISE_RE.search(reply):
+                    # Free models sometimes say "started / sending it soon" without calling any tool.
+                    nudged = True
+                    log.info("Model promised work without calling a tool - asking it to act")
+                    history.append({"role": "user", "content": NUDGE})
+                    continue
+                return reply or "✅ কাজ শেষ।"
 
             for call in tool_calls:
                 try:
