@@ -5,6 +5,7 @@ import asyncio
 import base64
 import logging
 import os
+import time
 from collections import defaultdict
 from datetime import time as dtime
 from pathlib import Path
@@ -70,6 +71,7 @@ async def _keep_typing(bot, chat_id: int, stop: asyncio.Event) -> None:
 
 async def run_brain(bot, app, chat_id: int, content: list[dict]) -> str:
     ctx = ToolContext(bot=bot, chat_id=chat_id, approvals=approvals, app=app)
+    started = time.monotonic()
     async with chat_locks[chat_id]:
         stop = asyncio.Event()
         typing = asyncio.create_task(_keep_typing(bot, chat_id, stop))
@@ -92,6 +94,14 @@ async def run_brain(bot, app, chat_id: int, content: list[dict]) -> str:
         finally:
             stop.set()
             await typing
+    try:
+        from .history import log_conversation
+        said = " ".join(b.get("text", "") for b in content if b.get("type") == "text")
+        if any(b.get("type") == "image" for b in content):
+            said = "[photo] " + said
+        log_conversation(said, reply, ctx.tools_run, brain.last_used.get(chat_id, ""), time.monotonic() - started)
+    except OSError:
+        pass
     return reply
 
 

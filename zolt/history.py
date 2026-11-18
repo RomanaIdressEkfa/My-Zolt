@@ -72,3 +72,15 @@ def undo_last(steps: int = 1) -> str:
     remaining = entries[:-steps]
     BACKUP_INDEX.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in remaining), encoding="utf-8")
     return "; ".join(done) or "Nothing changed."
+
+
+CONVERSATIONS = DATA_DIR / "logs" / "conversations.jsonl"
+
+
+def log_conversation(said: str, reply: str, tools: list[str], model: str, seconds: float) -> None:
+    """Her real requests and Zolt's replies, kept on the PC to find where Zolt goes wrong."""
+    CONVERSATIONS.parent.mkdir(parents=True, exist_ok=True)
+    row = {"time": datetime.now().isoformat(timespec="seconds"), "said": said[:1000], "reply": reply[:1500],
+           "tools": tools, "model": model, "seconds": round(seconds, 1)}
+    with CONVERSATIONS.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")

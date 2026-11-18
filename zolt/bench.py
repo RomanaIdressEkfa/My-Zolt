@@ -126,7 +126,8 @@ async def main(models: list[str]) -> None:
     for name in SIMULATED:
         if name in _HANDLERS:
             _HANDLERS[name] = _simulated
-    from . import providers  # noqa: F401  (registers all tools)
+    from . import history, providers  # noqa: F401  (registers all tools)
+    history.log_action = lambda *a, **k: None  # test runs must not show up in her "ki ki korecho" history
     cands = [c for c in [*CANDIDATES, ("", "zolt")] if c[1] in models or (not models and c[1] != "zolt")]
     by_key: dict[str, list[str]] = {}
     for key, model in cands:
