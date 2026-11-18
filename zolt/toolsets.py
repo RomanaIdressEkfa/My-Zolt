@@ -22,7 +22,7 @@ GROUPS: dict[str, set[str]] = {
                 "browser_scroll", "browser_back", "browser_screenshot"},
     "desktop": {"desktop_windows", "desktop_read", "desktop_click", "desktop_type", "desktop_hotkey", "clipboard"},
     "google": {"gmail", "calendar"},
-    "media": {"make_video", "make_document", "send_file"},
+    "media": {"make_cartoon_video", "make_document", "send_file"},
     "system": {"power_action", "watch_website", "list_reminders", "cancel_reminder", "forget",
                "start_parallel_task", "call_webhook", "show_history", "undo_changes"},
 }

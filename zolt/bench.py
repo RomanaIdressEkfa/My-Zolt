@@ -58,7 +58,7 @@ TASKS = [
     ("Apollo er README ta pore 2 line e bolo project ta ki", {"read_file", "read_document"}, {"edit_file"}, []),
     ("ei golpo ta diye 1 min er ekta reel video baniye daw: ek gorib baba sara din rickshaw chaliye meyer jonno "
      "notun jama kine, kintu bari fire dekhe meye tar puran jama sela kore babar jonno chador baniyeche",
-     {"make_video"}, {"make_document", "run_command"}, []),
+     {"make_cartoon_video"}, {"make_document", "run_command", "make_video"}, []),
 ]
 
 SIMULATED = {"open_app", "open_website", "open_project_folder", "power_action", "run_command", "git_push",
@@ -66,7 +66,7 @@ SIMULATED = {"open_app", "open_website", "open_project_folder", "power_action", 
              "browser_key", "browser_scroll", "browser_back", "browser_screenshot", "browser_read", "desktop_click",
              "desktop_type", "desktop_hotkey", "send_file", "make_document", "gmail", "calendar", "deploy_project",
              "call_webhook", "start_parallel_task", "edit_file", "write_file", "undo_changes", "clipboard",
-             "watch_website", "take_screenshot", "make_video", "create_pull_request", "git_branch", "db_query", "set_deploy_target"}
+             "watch_website", "take_screenshot", "make_video", "make_cartoon_video", "create_pull_request", "git_branch", "db_query", "set_deploy_target"}
 
 
 BANGLA_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")

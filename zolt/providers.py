@@ -18,6 +18,7 @@ from .prompt import build_system_prompt
 from .tools import OPENAI_TOOL_SCHEMAS, TOOL_SCHEMAS, ToolContext, run_tool
 from . import tools_more  # noqa: F401  (registers the extra tools)
 from . import video  # noqa: F401  (registers make_video)
+from . import cartoon  # noqa: F401  (registers make_cartoon_video)
 from .tools import _openai_tool as _openai_tool_from
 
 log = logging.getLogger("zolt.providers")
