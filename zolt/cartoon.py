@@ -30,10 +30,10 @@ CLOTH = {"red": "#d63a3a", "blue": "#2f6fd6", "green": "#2e9e5b", "yellow": "#e8
 SECOND = {"man": "#8a5a36", "old_man": "#7d878e", "woman": "#e8b931", "old_woman": "#d63a3a", "girl": "#ffffff",
           "boy": "#2f6fd6"}
 TYPES = ["man", "woman", "girl", "boy", "old_man", "old_woman"]
-BACKGROUNDS = ["village_row", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
+BACKGROUNDS = ["village_row", "bamboo", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
 POSES = ["stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
 EMOTIONS = ["neutral", "happy", "sad", "angry", "surprised", "crying"]
-PROPS = ["rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
+PROPS = ["ghost", "rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
          "sewing", "school_bag"]
 
 
@@ -371,7 +371,7 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
         timeline.append({"start": round(start, 3), "end": round(t, 3), "lines": lines,
                          "background": s.get("background") if s.get("background") in BACKGROUNDS else "home",
                          "time": s.get("time_of_day") if s.get("time_of_day") in ("day", "evening", "night") else "day",
-                         "camera": s.get("camera") or "zoom_in", "weather": s.get("weather") or "none",
+                         "camera": s.get("camera") or "zoom_in", "weather": s.get("weather") if s.get("weather") in ("rain", "fog") else "none",
                          "shot": "wide" if s.get("shot") == "wide" else "medium",
                          "props": [p for p in s.get("props") or [] if p in PROPS],
                          "characters": [{"id": ch.get("id"), "pose": ch.get("pose") if ch.get("pose") in POSES else "stand",
@@ -457,7 +457,7 @@ _LINE = {"type": "object", "additionalProperties": False, "required": ["speaker"
                         "text": {"type": "string", "description": "Bangla. Characters speak natural spoken dialogue; "
                                  "the narrator only bridges (short). Keep each line under ~20 words."}}}
 _SCENE = {"type": "object", "additionalProperties": False,
-          "required": ["lines", "background", "time_of_day", "shot", "characters", "props", "camera"],
+          "required": ["lines", "background", "time_of_day", "shot", "characters", "props", "weather", "camera"],
           "properties": {"lines": {"type": "array", "items": _LINE, "minItems": 1,
                                    "description": "What is said in this scene, in order: mostly the characters' own "
                                                   "dialogue (shown as speech bubbles), a little narrator"},
@@ -468,7 +468,9 @@ _SCENE = {"type": "object", "additionalProperties": False,
                          "time_of_day": {"type": "string", "enum": ["day", "evening", "night"]},
                          "characters": {"type": "array", "items": _IN_SCENE, "maxItems": 3,
                                         "description": "1-3 characters; different positions, facing each other"},
-                         "props": {"type": "array", "items": {"type": "string", "enum": PROPS}},
+                         "props": {"type": "array", "items": {"type": "string", "enum": PROPS},
+                                   "description": "ghost = a pale figure in a white sari with hair over the face (horror)"},
+                         "weather": {"type": "string", "enum": ["none", "fog", "rain"]},
                          "camera": {"type": "string", "enum": ["zoom_in", "zoom_out", "pan_left", "pan_right", "still"]}}}
 
 register_tools([({
