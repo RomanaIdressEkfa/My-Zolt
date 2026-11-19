@@ -14,6 +14,9 @@ svg{position:absolute;left:0;top:0}
 .series{display:inline-block;background:rgba(0,0,0,.55);color:#ffd84d;font-size:44px;font-weight:700;padding:8px 34px;border-radius:40px}
 .ep{display:inline-block;margin-left:14px;background:#e53935;color:#fff;font-size:44px;font-weight:700;padding:8px 30px;border-radius:40px}
 #sub{position:absolute;bottom:230px;left:60px;right:60px;text-align:center;z-index:5}
+#sub #off{display:inline-block;background:rgba(20,12,30,.82);color:#f3e5ff;font-size:56px;font-weight:600;line-height:1.45;
+  padding:20px 38px;border-radius:26px;border:4px solid #9c6ade;box-shadow:0 0 34px rgba(156,106,222,.55);text-shadow:0 0 12px rgba(200,160,255,.6)}
+#sub #off i{display:block;font-style:normal;font-size:36px;color:#c9a7ff;margin-bottom:4px}
 #sub #narr{display:inline-block;text-shadow:none;background:linear-gradient(#fff8e6,#f6e2b8);color:#3b2410;font-size:56px;font-weight:600;line-height:1.45;padding:22px 38px;border-radius:26px;border:5px solid #8a5a36;box-shadow:0 10px 30px rgba(0,0,0,.45)}
 #bubble{position:absolute;z-index:5;max-width:660px;background:#fff;color:#1d1d1d;font-size:56px;font-weight:700;line-height:1.4;padding:22px 34px;border-radius:44px;border:6px solid #2a1a12;text-align:center;box-shadow:0 10px 26px rgba(0,0,0,.35)}
 #bubble:after{content:'';position:absolute;bottom:-46px;left:var(--tail,50%);margin-left:-22px;border:22px solid transparent;border-top:36px solid #2a1a12}
@@ -79,6 +82,15 @@ function face(p, st) {
   // eyes
   for (const s of [-1, 1]) {
     const x = s * 29;
+    if (emotion === 'sleeping') {
+      o += `<path d="M${x - 14},-2 q14,9 28,0" fill="none" stroke="${OL}" stroke-width="4.5" stroke-linecap="round"/>`;
+      continue;
+    }
+    if (emotion === 'possessed') {
+      const g = .75 + Math.sin(t * 7) * .25;
+      o += `<ellipse cx="${x}" cy="-4" rx="22" ry="22" fill="#fff59d" opacity="${.35 * g}"/><ellipse cx="${x}" cy="-4" rx="13" ry="15" fill="#fffde7" stroke="#f9a825" stroke-width="3" opacity="${g}"/>`;
+      continue;
+    }
     const ry = (emotion === 'surprised' ? 20 : 16) * blink;
     o += `<ellipse cx="${x}" cy="-4" rx="14" ry="${ry}" fill="#fff" stroke="${OL}" stroke-width="3"/>`;
     if (blink > .5) {
@@ -161,7 +173,25 @@ function hairFront(p) {
 }
 
 // ------------------------------------------------------------------ whole person (drawn facing right, feet at 0,0)
+function headOnly(p, st) {   // the head as drawn in person(), moved so its centre is at 0,0
+  const skin = SKIN[p.type] || SKIN.man;
+  return `<g transform="translate(0 570)">${hairBack(p)}` +
+    `<ellipse cx="-72" cy="-560" rx="13" ry="18" fill="${skin}" stroke="${OL}" stroke-width="3.5"/><ellipse cx="72" cy="-560" rx="13" ry="18" fill="${skin}" stroke="${OL}" stroke-width="3.5"/>` +
+    `<ellipse cx="0" cy="-570" rx="72" ry="82" fill="${skin}" stroke="${OL}" stroke-width="4"/>` +
+    `<g transform="translate(0 -570)">${face(p, st)}</g>${hairFront(p)}</g>`;
+}
+function lying(p, st) {
+  const kantha = ['#6a3fa0', '#8e2436', '#1f6f8b', '#2e7d4f'][p.seed % 4];
+  const breathe = Math.sin(st.t * 2) * 4;
+  let o = `<rect x="-330" y="-30" width="560" height="36" rx="8" fill="#c9a26b" stroke="${OL}" stroke-width="3"/>`;   // pati mat
+  o += `<ellipse cx="-245" cy="-58" rx="85" ry="34" fill="#f4f1e8" stroke="${OL}" stroke-width="3"/>`;                   // pillow
+  o += `<g transform="translate(-235 -112) rotate(-12) scale(.82)">${headOnly(p, st)}</g>`;
+  o += `<path d="M-175,${-120 - breathe} C-100,${-150 - breathe} 120,${-135 - breathe} 205,-60 Q215,-25 190,-18 L-190,-18 Q-205,-60 -175,${-120 - breathe}Z" fill="${kantha}" stroke="${OL}" stroke-width="4"/>`;
+  for (let k = 0; k < 4; k++) o += `<path d="M${-150 + k * 85},-40 q30,-${50 + k * 4} 60,-${30 + k * 6}" stroke="#f2c14e" stroke-width="4" fill="none" stroke-dasharray="7 6"/>`;
+  return {svg: o, hand: {x: 0, y: -90}, lap: {x: 0, y: -90}};
+}
 function person(p, st) {
+  if (st.pose === 'lie') return lying(p, st);
   const {pose, t} = st;
   const type = p.type, skin = SKIN[type] || SKIN.man;
   const cloth = p.cloth, cloth2 = p.cloth2;
@@ -601,7 +631,7 @@ function render(t, cover = false) {
   const sc = scenes[i], lt = t - sc.start, len = sc.end - sc.start;
   if (i !== cur) {
     document.getElementById('bg').innerHTML = (BG[sc.background] || BG.home)(sc.time) +
-      (sc.time === 'night' ? `<rect width="1080" height="1920" fill="#0a1433" opacity=".42"/>` : sc.time === 'evening' ? `<rect width="1080" height="1920" fill="#ff8a3d" opacity=".12"/>` : '');
+      (sc.time === 'night' ? `<rect width="1080" height="1920" fill="#0a1433" opacity="${sc.background === 'bamboo' ? .22 : .42}"/>` : sc.time === 'evening' ? `<rect width="1080" height="1920" fill="#ff8a3d" opacity=".12"/>` : '');
     cur = i;
   }
   let o = '';
@@ -623,11 +653,17 @@ function render(t, cover = false) {
     const st = {pose: c.pose || 'stand', emotion: c.pose === 'cry' ? 'crying' : (c.emotion || 'neutral'), talking: !!(ln && chunk && ln.speaker === c.id), t: lt};
     const fig = person(c.p, st);
     const wide = sc.shot === 'wide';
-    const gy = wide ? 1600 : GROUND;
+    let gy = wide ? 1600 : GROUND;
     let x = wide ? ({left: 190, center: 540, right: 890}[c.position] ?? 540) : (POS[c.position] ?? POS.center);
     const dir = c.facing === 'left' ? -1 : 1;
     if (st.pose === 'walk') x += dir * (lt / len - .5) * 260;
-    const scale = (c.p.type === 'girl' || c.p.type === 'boy' ? .92 : (c.p.type.startsWith('old') ? 1.24 : 1.3)) * (wide ? .58 : 1);
+    let scale = (c.p.type === 'girl' || c.p.type === 'boy' ? .92 : (c.p.type.startsWith('old') ? 1.24 : 1.3)) * (wide ? .58 : 1);
+    if (st.pose === 'lie') {   // keep the sleeper's head on screen; a second sleeper lies a little further back
+      if (c.position === 'right') { gy -= 120; scale *= .92; }
+      const head = x - dir * scale * 235;
+      if (head < 150) x += 150 - head;
+      if (head > 930) x -= head - 930;
+    }
     let extra = '';
     if (st.pose === 'sew' && props.includes('sewing')) extra += `<g transform="translate(20 -120)">${PROPS.sewing()}</g>`;
     if (!heldUsed && held.length && c.id === holder) {   // drawn after everyone so nobody covers it
@@ -635,7 +671,7 @@ function render(t, cover = false) {
       onTop += `<g transform="translate(${hx} ${hy}) scale(${scale})">${PROPS[held[0]]('', lt)}</g>`;
       heldUsed = true;
     }
-    placed[c.id] = {x, top: gy - scale * (st.pose === 'sit' || st.pose === 'sew' ? 560 : 740)};
+    placed[c.id] = {x: st.pose === 'lie' ? x - dir * scale * 235 : x, top: gy - scale * (st.pose === 'lie' ? 230 : st.pose === 'sit' || st.pose === 'sew' ? 560 : 740)};
     o += `<g transform="translate(${x} ${gy}) scale(${dir * scale} ${scale})">` +
       `<ellipse cx="0" cy="4" rx="95" ry="16" fill="#000" opacity=".18"/>` + fig.svg + extra + `</g>`;
   });
@@ -656,7 +692,7 @@ function render(t, cover = false) {
     o += `<line x1="${x}" y1="${y}" x2="${x - 12}" y2="${y + 44}" stroke="#bfe3ff" stroke-width="3" opacity=".6"/>`;
   }
   if (sc.time === 'night') o += `<rect width="1080" height="1920" fill="#0a1433" opacity=".18"/>` +
-    `<defs><radialGradient id="vig" cx="50%" cy="55%" r="70%"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".7"/></radialGradient></defs><rect width="1080" height="1920" fill="url(#vig)"/>`;
+    `<defs><radialGradient id="vig" cx="50%" cy="55%" r="70%"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></radialGradient></defs><rect width="1080" height="1920" fill="url(#vig)"/>`;
   document.getElementById('fg').innerHTML = o;
 
   // camera
@@ -668,8 +704,13 @@ function render(t, cover = false) {
   const subEl = document.getElementById('sub'), bub = document.getElementById('bubble');
   subEl.innerHTML = ''; bub.style.display = 'none';
   if (chunk) {
-    const who = placed[ln.speaker];
-    if (!who) {
+    let who = placed[ln.speaker];
+    if (!who && ln.speaker !== 'narrator' && (sc.props || []).includes('jinn'))
+      who = {x: sc.shot === 'wide' ? 760 : 720, top: sc.shot === 'wide' ? 820 : 560};
+    if (!who && ln.speaker !== 'narrator') {   // a voice from somewhere we can't see
+      const name = (DATA.cast[ln.speaker] || {}).name || '';
+      subEl.innerHTML = `<span id="off"><i>🔊 ${esc(name)} (অদৃশ্য কণ্ঠ)</i>${esc(chunk[2])}</span>`;
+    } else if (!who) {
       subEl.innerHTML = `<span id="narr">${esc(chunk[2])}</span>`;
     } else {   // speech bubble above the speaker, following the camera
       const name = (DATA.cast[ln.speaker] || {}).name;

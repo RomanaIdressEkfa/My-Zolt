@@ -31,8 +31,8 @@ SECOND = {"man": "#8a5a36", "old_man": "#7d878e", "woman": "#e8b931", "old_woman
           "boy": "#2f6fd6"}
 TYPES = ["man", "woman", "girl", "boy", "old_man", "old_woman"]
 BACKGROUNDS = ["village_row", "bamboo", "sweet_shop", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
-POSES = ["stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
-EMOTIONS = ["neutral", "happy", "sad", "angry", "surprised", "crying"]
+POSES = ["lie", "stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
+EMOTIONS = ["sleeping", "possessed", "neutral", "happy", "sad", "angry", "surprised", "crying"]
 PROPS = ["ghost", "jinn", "rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
          "sewing", "school_bag"]
 
@@ -81,6 +81,32 @@ ELEVEN_VOICES = {"man": ["iP95p4xoKVk53GoZ742B", "cjVigY5qzO86Huf0OWal"],       
                  "old_woman": ["XrExE9yKIg1WjnnlVkGX", "Xb7hH8MSUJpSbSDYk0k2"],    # Matilda, Alice
                  "narrator_male": ["JBFqnCBsd6RMkjVDRZzb"],                         # George (storyteller)
                  "narrator_female": ["pFZP5JQG7iQjIQuC4Bku"]}                       # Lily
+
+
+VOICE_CACHE = VIDEO_DIR.parent.parent / "voice_cache"   # data/voice_cache: re-renders don't spend credits again
+
+
+def _cache_key(provider: str, voice: str, text: str) -> str:
+    import hashlib
+    model = os.getenv("ELEVENLABS_MODEL", "eleven_v4") if provider == "eleven" else ""
+    return hashlib.sha1(f"{provider}|{voice}|{model}|{text.strip()}".encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str, out: Path):
+    clip = VOICE_CACHE / f"{key}.mp3"
+    if not clip.exists():
+        return None
+    import shutil
+    shutil.copy(clip, out)
+    meta = VOICE_CACHE / f"{key}.json"
+    return [tuple(x) for x in json.loads(meta.read_text(encoding="utf-8"))] if meta.exists() else []
+
+
+def _cache_put(key: str, out: Path, timings) -> None:
+    import shutil
+    VOICE_CACHE.mkdir(parents=True, exist_ok=True)
+    shutil.copy(out, VOICE_CACHE / f"{key}.mp3")
+    (VOICE_CACHE / f"{key}.json").write_text(json.dumps(list(timings or []), ensure_ascii=False), encoding="utf-8")
 
 
 def _eleven_credits_left() -> int:
@@ -287,6 +313,10 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
     evoice["narrator"] = ELEVEN_VOICES[f"narrator_{narrator_gender}"][0]
     if inp.get("narrator_is") in cast:   # the grown-up storyteller: George's warm voice for both
         evoice[inp["narrator_is"]] = evoice["narrator"]
+    for c in cast_in:   # an impostor speaks in someone else's voice
+        if c.get("voice_of") in cast and c.get("id") in cast:
+            evoice[c["id"]] = evoice[c["voice_of"]]
+            gvoice[c["id"]] = gvoice[c["voice_of"]]
     if inp.get("narrator_is") in cast:   # first-person story: the narrator is a character, same voice
         gvoice["narrator"] = gvoice[inp["narrator_is"]]
     gemini_ok = [bool(os.getenv("GEMINI_API_KEY", "").strip())]
@@ -316,8 +346,14 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
             if eleven_ok[0]:
                 vid = evoice[speaker]
                 try:
+                    key = _cache_key("eleven", vid, text)
+                    tm = _cache_get(key, out)
+                    if tm is not None:
+                        source[(si, li)] = "eleven"
+                        return tm
                     tm = await _eleven(text, vid, out)
                     if plausible(out, text):
+                        _cache_put(key, out, tm)
                         source[(si, li)] = "eleven"
                         return tm
                     log.warning("ElevenLabs clip looks wrong (%.1fs); trying another voice", _duration(out))
@@ -364,6 +400,8 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                 await asyncio.to_thread(_split_lines, raw, [x[2] for x in parts], outs)
                 for (si, li, ln), out in zip(grp, outs):
                     if plausible(out, ln["text"]):
+                        sp = ln.get("speaker") if ln.get("speaker") in cast else "narrator"
+                        _cache_put(_cache_key("google", gvoice[sp], ln["text"]), out, [])
                         source[(si, li)] = "google"
             except Exception as e:
                 log.warning("Batched Google voices stopped: %s", e)
