@@ -23,8 +23,32 @@ async function kvJSON(env, key, fallback) {
 }
 const putJSON = (env, key, value) => env.ZOLT.put(key, JSON.stringify(value));
 
+// The PC's inbox and heartbeat live in one Durable Object: strongly consistent, so the PC never gets a
+// message twice or late (KV is eventually consistent across Cloudflare's locations).
+export class Hub {
+  constructor(state) { this.storage = state.storage; }
+  async fetch(request) {
+    const path = new URL(request.url).pathname;
+    if (path === "/push") {           // a Telegram update for the PC
+      const inbox = (await this.storage.get("inbox")) || [];
+      inbox.push(await request.json());
+      await this.storage.put("inbox", inbox);
+      return new Response("ok");
+    }
+    if (path === "/take") {           // PC heartbeat: hand over everything waiting
+      await this.storage.put("pc_seen", Date.now());
+      const inbox = (await this.storage.get("inbox")) || [];
+      if (inbox.length) await this.storage.put("inbox", []);
+      return Response.json(inbox);
+    }
+    if (path === "/seen") return new Response(String((await this.storage.get("pc_seen")) || 0));
+    return new Response("?", {status: 404});
+  }
+}
+const hub = env => env.HUB.get(env.HUB.idFromName("main"));
+
 async function pcOnline(env) {
-  const seen = Number(await env.ZOLT.get("pc_seen") || 0);
+  const seen = Number(await (await hub(env).fetch("https://hub/seen")).text());
   return Date.now() - seen < PC_FRESH_MS;
 }
 
@@ -149,9 +173,7 @@ export default {
       const from = update.message?.from?.id ?? update.callback_query?.from?.id;
       if (String(from) !== String(env.OWNER_ID)) return new Response("ok");   // only her
       if (await pcOnline(env)) {
-        const inbox = await kvJSON(env, "inbox", []);
-        inbox.push(update);
-        await putJSON(env, "inbox", inbox);
+        await hub(env).fetch("https://hub/push", {method: "POST", body: JSON.stringify(update)});
       } else {
         ctx.waitUntil(handleOffline(env, update));
       }
@@ -163,10 +185,8 @@ export default {
       if (request.headers.get("x-zolt-token") !== env.PC_TOKEN) return new Response("no", {status: 403});
       const body = await request.json().catch(() => ({}));
       if (body.memory) await env.ZOLT.put("memory", String(body.memory).slice(-20000));
-      await env.ZOLT.put("pc_seen", String(Date.now()));
-      const inbox = await kvJSON(env, "inbox", []);
+      const inbox = await (await hub(env).fetch("https://hub/take", {method: "POST"})).json();
       const tasks = await kvJSON(env, "pc_tasks", []);
-      if (inbox.length) await putJSON(env, "inbox", []);
       if (tasks.length) await putJSON(env, "pc_tasks", []);
       return Response.json({updates: [...tasks, ...inbox]});
     }

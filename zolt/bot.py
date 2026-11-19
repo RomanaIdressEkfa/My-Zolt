@@ -436,6 +436,8 @@ async def _run_with_cloud(app: Application) -> None:
     await app.start()
     log.info("Connected to Zolt cloud: %s", url)
     last_memory, failures = "", 0
+    from collections import deque
+    seen_ids: deque = deque(maxlen=2000)
     async with httpx.AsyncClient(timeout=20) as client:
         while True:
             try:
@@ -445,6 +447,10 @@ async def _run_with_cloud(app: Application) -> None:
                 r.raise_for_status()
                 last_memory, failures = memory, 0
                 for raw in r.json().get("updates", []):
+                    uid = raw.get("update_id")
+                    if uid in seen_ids:      # never handle the same message twice
+                        continue
+                    seen_ids.append(uid)
                     # handle in the background so long jobs never stop the heartbeat
                     asyncio.create_task(app.process_update(Update.de_json(raw, app.bot)))
             except Exception as e:

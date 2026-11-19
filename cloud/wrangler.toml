@@ -17,3 +17,11 @@ id = "b909fa7d59e14cff82bf45f7e57ef1d0"
 
 # Secrets (set with `wrangler secret put`, never stored here):
 # TELEGRAM_BOT_TOKEN, OWNER_ID, GEMINI_API_KEY, GROQ_API_KEY, GH_TOKEN, PC_TOKEN, WEBHOOK_SECRET
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]
