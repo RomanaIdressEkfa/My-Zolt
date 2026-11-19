@@ -6,7 +6,10 @@ html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:#000;
   font-family:'Hind Siliguri','Nirmala UI','Vrinda',sans-serif}
 #cam{position:absolute;inset:0;transform-origin:50% 62%}
 svg{position:absolute;left:0;top:0}
-#top{position:absolute;bottom:44px;right:40px;z-index:5;opacity:.55}
+.logo{position:absolute;z-index:5;opacity:.62;display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.18);padding:10px 30px 10px 12px;border-radius:40px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font-size:40px;font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,.45);font-family:Arial,'Nirmala UI',sans-serif}
+.logo b{display:inline-flex;width:54px;height:54px;border-radius:50%;background:#1877f2;color:#fff;font:700 42px/58px Arial;justify-content:center;text-shadow:none}
+#logo1{top:60px;left:44px}#logo2{bottom:60px;right:44px}
+#top{display:none}
 #top .series{display:inline-block;background:rgba(255,255,255,.14);color:#fff;font-size:34px;font-weight:600;padding:8px 26px;border-radius:30px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);text-shadow:0 1px 4px rgba(0,0,0,.6);letter-spacing:1px}
 .series{display:inline-block;background:rgba(0,0,0,.55);color:#ffd84d;font-size:44px;font-weight:700;padding:8px 34px;border-radius:40px}
 .ep{display:inline-block;margin-left:14px;background:#e53935;color:#fff;font-size:44px;font-weight:700;padding:8px 30px;border-radius:40px}
@@ -26,10 +29,10 @@ svg{position:absolute;left:0;top:0}
 <body>
 <div id="cam"><svg id="bg" width="1080" height="1920" viewBox="0 0 1080 1920"></svg>
 <svg id="fg" width="1080" height="1920" viewBox="0 0 1080 1920"></svg></div>
-<div id="top"></div><div id="sub"></div><div id="bubble" style="display:none"></div><div id="title"></div><div id="fade"></div>
+<div id="top"></div><div class="logo" id="logo1"></div><div class="logo" id="logo2"></div><div id="sub"></div><div id="bubble" style="display:none"></div><div id="title"></div><div id="fade"></div>
 <script>
 "use strict";
-const OL = '#2a1a12';            // outline colour
+let OL = '#2a1a12';            // outline colour
 const GROUND = 1440;              // feet line
 const POS = {left: 270, center: 540, right: 815};
 const CLOTH = {red:'#d63a3a', blue:'#2f6fd6', green:'#2e9e5b', yellow:'#e8b931', purple:'#7b4bc4', orange:'#ec7a2a',
@@ -380,6 +383,30 @@ const BG = {
       `<path d="M830,900 l30,-50 l30,50 l30,-50 l30,50 l30,-50 l30,50 l30,-50 l30,50" fill="#fff" stroke="${OL}" stroke-width="3"/><rect x="850" y="1000" width="200" height="22" fill="#f2cc8f"/>`;
     return o;
   },
+  village_row(time) {
+    const g = {day: ['#aebfcb', '#e7e2d4'], evening: ['#e7a06c', '#f4d9b0'], night: ['#0d1b3d', '#2c3e70']}[time] || ['#aebfcb', '#e7e2d4'];
+    let o = `<defs><linearGradient id="vr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${g[0]}"/><stop offset="1" stop-color="${g[1]}"/></linearGradient></defs><rect width="1080" height="1300" fill="url(#vr)"/>`;
+    if (time === 'night') o += `<circle cx="820" cy="300" r="55" fill="#fdf6d8"/>`;
+    for (const x of [60, 330, 600, 870, 1100]) o += `<path d="M${x},1020 Q${x + 8},900 ${x - 4},790" stroke="#8a6a48" stroke-width="16" fill="none"/>` +
+      [-150, -110, -60, -20, 30].map(a => `<path d="M${x - 4},790 q${Math.cos(a * R) * 70},${-30 + Math.sin(a * R) * 30} ${Math.cos(a * R) * 120},${Math.sin(a * R) * 70 + 30}" stroke="#3f7a4a" stroke-width="14" fill="none" stroke-linecap="round"/>`).join('');
+    o += `<line x1="760" y1="760" x2="760" y2="1040" stroke="#7d7d7d" stroke-width="6"/><line x1="735" y1="775" x2="785" y2="775" stroke="#7d7d7d" stroke-width="5"/>`;
+    const walls = ['#7fa9c9', '#c0574a', '#e2b84a', '#d9a873', '#8fb27a'], roofs = ['#d9774a', '#9aa0a6', '#d9774a', '#9aa0a6', '#d9774a'];
+    const doors = ['#3f7d4a', '#6b4a35', '#3d6fa8', '#4a7fae', '#6b4a35'];
+    for (let i = 0; i < 5; i++) {
+      const x = -60 + i * 250, w = 240, top = 1000, h = 250;
+      o += `<rect x="${x}" y="${top}" width="${w}" height="${h}" fill="${walls[i]}" stroke="${OL}" stroke-width="2"/>`;
+      for (let k = 1; k < 12; k++) o += `<line x1="${x + k * 20}" y1="${top}" x2="${x + k * 20}" y2="${top + h}" stroke="${shade(walls[i], .85)}" stroke-width="2"/>`;
+      o += `<path d="M${x - 14},${top + 6} L${x + w / 2},${top - 92} L${x + w + 14},${top + 6}Z" fill="${roofs[i]}" stroke="${OL}" stroke-width="2"/>` +
+        `<path d="M${x + w / 2 - 50},${top - 6} L${x + w / 2},${top - 52} L${x + w / 2 + 50},${top - 6}Z" fill="${shade(walls[i], 1.2)}" stroke="${OL}" stroke-width="2"/><circle cx="${x + w / 2}" cy="${top - 26}" r="9" fill="${shade(walls[i], .6)}"/>` +
+        `<rect x="${x + 22}" y="${top + 90}" width="56" height="160" fill="${doors[i]}" stroke="${OL}" stroke-width="2"/>` +
+        `<rect x="${x + 120}" y="${top + 100}" width="80" height="60" fill="#3b2f28" stroke="${OL}" stroke-width="2"/>` +
+        [0, 1, 2, 3].map(k => `<line x1="${x + 132 + k * 18}" y1="${top + 100}" x2="${x + 132 + k * 18}" y2="${top + 160}" stroke="#d9cbb5" stroke-width="4"/>`).join('') +
+        `<rect x="${x - 6}" y="${top + h - 8}" width="${w + 12}" height="16" fill="${shade(walls[i], .7)}"/>`;
+    }
+    o += `<rect x="0" y="1258" width="1080" height="662" fill="#d8c69a"/><rect x="0" y="1258" width="1080" height="30" fill="#cdb98a"/>`;
+    for (let k = 0; k < 26; k++) o += `<ellipse cx="${rnd(k + 200) * 1080}" cy="${1320 + rnd(k + 220) * 560}" rx="${8 + rnd(k) * 16}" ry="4" fill="#c4ae7e" opacity=".7"/>`;
+    return o;
+  },
   village(time) {
     let o = sky(time, 1100);
     o += `<path d="M0,900 Q150,820 300,880 T600,860 T900,870 T1080,850 L1080,1100 L0,1100Z" fill="#3f7d3a"/>`;
@@ -446,10 +473,29 @@ const BG = {
 
 // ------------------------------------------------------------------ scene rendering
 let DATA = null, cur = -1;
+function sky_life(t) {
+  let o = '';
+  for (let k = 0; k < 4; k++) {   // soft clouds drifting right
+    const x = ((rnd(k + 40) * 1300 + t * (10 + k * 4)) % 1400) - 180, y = 260 + rnd(k + 60) * 420;
+    o += `<g fill="#fffaf0" opacity=".95"><ellipse cx="${x}" cy="${y}" rx="85" ry="30"/><ellipse cx="${x + 45}" cy="${y - 20}" rx="55" ry="32"/><ellipse cx="${x - 50}" cy="${y - 6}" rx="45" ry="22"/></g>`;
+  }
+  for (let k = 0; k < 3; k++) {   // birds crossing with flapping wings
+    const x = ((rnd(k + 80) * 1200 + t * (45 + k * 12)) % 1300) - 100, y = 330 + rnd(k + 90) * 300 + Math.sin(t * 2 + k) * 12;
+    const f = Math.sin(t * 10 + k * 2) * 9;
+    o += `<path d="M${x - 16},${y - f} Q${x - 7},${y - 6} ${x},${y} Q${x + 7},${y - 6} ${x + 16},${y - f}" stroke="#4a4a4a" stroke-width="3.5" fill="none" stroke-linecap="round"/>`;
+  }
+  return o;
+}
+
 function setup(data) {
   DATA = data;
-  document.getElementById('top').innerHTML =
-    data.series ? `<span class="series">${esc(data.series)}</span>` : '';   // small watermark, bottom right
+  const handle = data.handle || data.series;
+  for (const id of ['logo1', 'logo2']) {
+    const el = document.getElementById(id);
+    el.innerHTML = handle ? `<b>f</b>@${esc(handle)}` : '';
+    el.style.display = handle ? 'flex' : 'none';
+  }
+  if (data.style === 'flat') OL = '#6b5444';   // soft brown lines instead of black
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
 
@@ -464,6 +510,7 @@ function render(t, cover = false) {
     cur = i;
   }
   let o = '';
+  if (['village', 'village_row', 'street'].includes(sc.background) && sc.time !== 'night') o += sky_life(lt + sc.start);
   const cast = DATA.cast;
   const props = sc.props || [];
   const anyWalk = (sc.characters || []).some(c => c.pose === 'walk');
@@ -480,19 +527,21 @@ function render(t, cover = false) {
   chars.forEach((c, k) => {
     const st = {pose: c.pose || 'stand', emotion: c.pose === 'cry' ? 'crying' : (c.emotion || 'neutral'), talking: !!(ln && chunk && ln.speaker === c.id), t: lt};
     const fig = person(c.p, st);
-    let x = POS[c.position] ?? POS.center;
+    const wide = sc.shot === 'wide';
+    const gy = wide ? 1600 : GROUND;
+    let x = wide ? ({left: 190, center: 540, right: 890}[c.position] ?? 540) : (POS[c.position] ?? POS.center);
     const dir = c.facing === 'left' ? -1 : 1;
     if (st.pose === 'walk') x += dir * (lt / len - .5) * 260;
-    const scale = c.p.type === 'girl' || c.p.type === 'boy' ? .92 : (c.p.type.startsWith('old') ? 1.24 : 1.3);
+    const scale = (c.p.type === 'girl' || c.p.type === 'boy' ? .92 : (c.p.type.startsWith('old') ? 1.24 : 1.3)) * (wide ? .58 : 1);
     let extra = '';
     if (st.pose === 'sew' && props.includes('sewing')) extra += `<g transform="translate(20 -120)">${PROPS.sewing()}</g>`;
     if (!heldUsed && held.length && c.id === holder) {   // drawn after everyone so nobody covers it
-      const hx = x + dir * scale * (fig.hand.x + 10), hy = GROUND + scale * (fig.hand.y + 6);
+      const hx = x + dir * scale * (fig.hand.x + 10), hy = gy + scale * (fig.hand.y + 6);
       onTop += `<g transform="translate(${hx} ${hy}) scale(${scale})">${PROPS[held[0]]('', lt)}</g>`;
       heldUsed = true;
     }
-    placed[c.id] = {x, top: GROUND - scale * (st.pose === 'sit' || st.pose === 'sew' ? 560 : 740)};
-    o += `<g transform="translate(${x} ${GROUND}) scale(${dir * scale} ${scale})">` +
+    placed[c.id] = {x, top: gy - scale * (st.pose === 'sit' || st.pose === 'sew' ? 560 : 740)};
+    o += `<g transform="translate(${x} ${gy}) scale(${dir * scale} ${scale})">` +
       `<ellipse cx="0" cy="4" rx="95" ry="16" fill="#000" opacity=".18"/>` + fig.svg + extra + `</g>`;
   });
   o += onTop;

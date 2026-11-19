@@ -30,7 +30,7 @@ CLOTH = {"red": "#d63a3a", "blue": "#2f6fd6", "green": "#2e9e5b", "yellow": "#e8
 SECOND = {"man": "#8a5a36", "old_man": "#7d878e", "woman": "#e8b931", "old_woman": "#d63a3a", "girl": "#ffffff",
           "boy": "#2f6fd6"}
 TYPES = ["man", "woman", "girl", "boy", "old_man", "old_woman"]
-BACKGROUNDS = ["home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
+BACKGROUNDS = ["village_row", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
 POSES = ["stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
 EMOTIONS = ["neutral", "happy", "sad", "angry", "surprised", "crying"]
 PROPS = ["rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
@@ -262,6 +262,7 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                          "background": s.get("background") if s.get("background") in BACKGROUNDS else "home",
                          "time": s.get("time_of_day") if s.get("time_of_day") in ("day", "evening", "night") else "day",
                          "camera": s.get("camera") or "zoom_in", "weather": s.get("weather") or "none",
+                         "shot": "wide" if s.get("shot") == "wide" else "medium",
                          "props": [p for p in s.get("props") or [] if p in PROPS],
                          "characters": [{"id": ch.get("id"), "pose": ch.get("pose") if ch.get("pose") in POSES else "stand",
                                          "emotion": ch.get("emotion") if ch.get("emotion") in EMOTIONS else "neutral",
@@ -269,7 +270,7 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                                         for ch in (s.get("characters") or [])[:3]]})
     total = t
     data = {"cast": cast, "scenes": timeline, "subs": [], "title": title, "episode": episode, "series": series,
-            "total": total}
+            "handle": (inp.get("page_handle") or series).strip().lstrip("@"), "style": "flat", "total": total}
 
     # 3) audio track: every clip placed at its start time
     inputs, chain = [], []
@@ -346,11 +347,14 @@ _LINE = {"type": "object", "additionalProperties": False, "required": ["speaker"
                         "text": {"type": "string", "description": "Bangla. Characters speak natural spoken dialogue; "
                                  "the narrator only bridges (short). Keep each line under ~20 words."}}}
 _SCENE = {"type": "object", "additionalProperties": False,
-          "required": ["lines", "background", "time_of_day", "characters", "props", "camera"],
+          "required": ["lines", "background", "time_of_day", "shot", "characters", "props", "camera"],
           "properties": {"lines": {"type": "array", "items": _LINE, "minItems": 1,
                                    "description": "What is said in this scene, in order: mostly the characters' own "
                                                   "dialogue (shown as speech bubbles), a little narrator"},
-                         "background": {"type": "string", "enum": BACKGROUNDS},
+                         "background": {"type": "string", "enum": BACKGROUNDS,
+                                        "description": "village_row = a row of colourful village tin houses (her favourite)"},
+                         "shot": {"type": "string", "enum": ["wide", "medium"],
+                                  "description": "wide = small figures in a big outdoor view (village scenes, arrivals, crowds); medium = closer for emotional talks indoors"},
                          "time_of_day": {"type": "string", "enum": ["day", "evening", "night"]},
                          "characters": {"type": "array", "items": _IN_SCENE, "maxItems": 3,
                                         "description": "1-3 characters; different positions, facing each other"},
