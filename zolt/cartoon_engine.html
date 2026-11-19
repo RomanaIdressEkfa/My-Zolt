@@ -293,6 +293,29 @@ function ghost(x, y, t, s = 1) {
     <path d="M-60,-520 L-75,-300 M-30,-500 L-40,-290 M30,-500 L40,-290 M60,-520 L75,-300" stroke="#14100e" stroke-width="14" stroke-linecap="round"/>
     <path d="M-110,-420 Q-150,-300 -130,-220 M110,-420 Q150,-300 130,-220" stroke="#e9ecef" stroke-width="26" fill="none" stroke-linecap="round"/></g>`;
 }
+function jinn(x, y, t, s = 1) {   // tall stranger in a white jubba; face hidden; floats above the ground
+  const bob = Math.sin(t * 1.6 + x) * 10, glow = .5 + Math.sin(t * 2.4 + x) * .15;
+  return `<defs><radialGradient id="jglow"><stop offset="0" stop-color="#fff6d0" stop-opacity=".55"/><stop offset="1" stop-color="#fff6d0" stop-opacity="0"/></radialGradient>
+      <linearGradient id="jfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7f5ee"/><stop offset=".85" stop-color="#f7f5ee" stop-opacity=".9"/><stop offset="1" stop-color="#f7f5ee" stop-opacity="0"/></linearGradient></defs>
+    <g transform="translate(${x} ${y - 70 + bob}) scale(${s})">
+    <ellipse cx="0" cy="-380" rx="260" ry="460" fill="url(#jglow)" opacity="${glow}"/>
+    <path d="M-80,-600 C-120,-420 -130,-180 -110,0 L110,0 C130,-180 120,-420 80,-600Z" fill="url(#jfade)" stroke="#cfcab8" stroke-width="3"/>
+    <path d="M-80,-600 Q0,-560 80,-600 L60,-640 L-60,-640Z" fill="#ece8dc"/>
+    <ellipse cx="0" cy="-700" rx="66" ry="78" fill="#1b1612"/>
+    <circle cx="-22" cy="-705" r="7" fill="#ffd54f" opacity="${.6 + glow * .4}"/><circle cx="22" cy="-705" r="7" fill="#ffd54f" opacity="${.6 + glow * .4}"/>
+    <path d="M-80,-730 Q-80,-830 0,-835 Q80,-830 80,-730 Q40,-760 0,-756 Q-40,-760 -80,-730Z" fill="#f4f1e8" stroke="#cfcab8" stroke-width="3"/>
+    <path d="M-40,-650 Q0,-560 40,-650" fill="#e9e5da" opacity=".9"/></g>
+    <ellipse cx="${x}" cy="${y + 6}" rx="70" ry="12" fill="#000" opacity=".08"/>`;
+}
+function fragrance(t) {   // drifting golden specks: the sweet smell in the air
+  let o = '';
+  for (let k = 0; k < 40; k++) {
+    const x = (rnd(k + 700) * 1080 + Math.sin(t * .7 + k) * 40), y = 1500 - ((rnd(k + 800) * 1300 + t * (30 + k % 5 * 8)) % 1300);
+    o += `<circle cx="${x}" cy="${y}" r="${2 + rnd(k) * 4}" fill="#ffe9a8" opacity="${.35 + .4 * Math.abs(Math.sin(t * 2 + k))}"/>`;
+  }
+  return o;
+}
+
 function fog(t) {
   let o = '';
   for (let k = 0; k < 6; k++) {
@@ -401,6 +424,41 @@ const BG = {
       `<path d="M0,1600 h1080" stroke="#f2f2f2" stroke-width="14" stroke-dasharray="80 60"/>`;
     o += `<rect x="830" y="900" width="240" height="250" fill="#7a5230" stroke="${OL}" stroke-width="4"/><path d="M800,900 L1080,900 L1080,850 L830,850Z" fill="#d63a3a" stroke="${OL}" stroke-width="4"/>` +
       `<path d="M830,900 l30,-50 l30,50 l30,-50 l30,50 l30,-50 l30,50 l30,-50 l30,50" fill="#fff" stroke="${OL}" stroke-width="3"/><rect x="850" y="1000" width="200" height="22" fill="#f2cc8f"/>`;
+    return o;
+  },
+  sweet_shop(time) {
+    let o = `<rect width="1080" height="1150" fill="#e9b96e"/>`;
+    for (let k = 0; k < 14; k++) o += `<rect x="${k * 80}" y="0" width="40" height="1150" fill="#e2ad5c" opacity=".5"/>`;
+    o += `<rect x="190" y="160" width="700" height="110" rx="14" fill="#b71c1c" stroke="${OL}" stroke-width="4"/>` +
+      `<text x="540" y="237" font-size="62" font-weight="700" fill="#ffe082" text-anchor="middle" font-family="Hind Siliguri,Nirmala UI">মধু মিষ্টান্ন ভাণ্ডার</text>`;
+    for (let r = 0; r < 2; r++) {   // shelves with brass pots and clay hari
+      o += `<rect x="60" y="${410 + r * 200}" width="960" height="16" fill="#7a5230" stroke="${OL}" stroke-width="3"/>`;
+      for (let c = 0; c < 7; c++) {
+        const x = 110 + c * 135, y = 410 + r * 200;
+        o += (c + r) % 2 ? `<path d="M${x - 40},${y} C${x - 50},${y - 90} ${x + 50},${y - 90} ${x + 40},${y}Z" fill="#b5532f" stroke="${OL}" stroke-width="3"/><ellipse cx="${x}" cy="${y - 78}" rx="22" ry="7" fill="#7a3a22"/>`
+          : `<path d="M${x - 38},${y} L${x - 30},${y - 60} L${x + 30},${y - 60} L${x + 38},${y}Z" fill="#d4a63a" stroke="${OL}" stroke-width="3"/><ellipse cx="${x}" cy="${y - 60}" rx="30" ry="8" fill="#e8c35a" stroke="${OL}" stroke-width="2"/>`;
+      }
+    }
+    o += `<line x1="540" y1="0" x2="540" y2="230" stroke="#333" stroke-width="3"/><circle cx="540" cy="250" r="26" fill="#fff4c2" stroke="${OL}" stroke-width="3"/>` +
+      `<circle cx="540" cy="250" r="140" fill="#fff1a8" opacity=".18"/>`;
+    o += floor('#9c6e48');
+    // clay stove with a big iron kerai and rising steam
+    o += `<path d="M40,1150 L40,1010 Q170,950 300,1010 L300,1150Z" fill="#b8865a" stroke="${OL}" stroke-width="5"/><path d="M95,1080 q20,-40 40,0 q20,-50 40,0z" fill="#ff8c2e"/>` +
+      `<path d="M30,985 Q170,1050 310,985 L300,1000 Q170,1060 40,1000Z" fill="#3a3a3a" stroke="${OL}" stroke-width="4"/><ellipse cx="170" cy="988" rx="140" ry="22" fill="#f3e6c4" stroke="${OL}" stroke-width="3"/>` +
+      [120, 165, 210].map(x => `<circle cx="${x}" cy="985" r="15" fill="#fffaf0" stroke="#d8c9a5" stroke-width="2"/>`).join('');
+    // glass sweets counter on the right
+    o += `<rect x="560" y="900" width="500" height="250" fill="#8a5a36" stroke="${OL}" stroke-width="5"/><rect x="580" y="790" width="460" height="130" fill="#cfe9f2" opacity=".55" stroke="${OL}" stroke-width="4"/>`;
+    const sweets = [['#fffaf0', 'c'], ['#5a2a1a', 'c'], ['#f4a7b9', 'o'], ['#f3dfa2', 's']];
+    sweets.forEach(([col, kind], i) => {
+      const x = 640 + i * 110;
+      o += `<ellipse cx="${x}" cy="895" rx="48" ry="12" fill="#c9c9c9" stroke="${OL}" stroke-width="2"/>`;
+      for (let k = 0; k < 4; k++) {
+        const sx = x - 24 + (k % 2) * 48 - (k > 1 ? 24 : 0) + (k > 1 ? 24 : 0), sy = 880 - (k > 1 ? 20 : 0);
+        o += kind === 'c' ? `<circle cx="${x - 22 + (k % 2) * 44}" cy="${sy}" r="15" fill="${col}" stroke="${OL}" stroke-width="2"/>` :
+          kind === 'o' ? `<ellipse cx="${x - 22 + (k % 2) * 44}" cy="${sy}" rx="19" ry="12" fill="${col}" stroke="${OL}" stroke-width="2"/>` :
+          `<rect x="${x - 36 + (k % 2) * 44}" y="${sy - 12}" width="28" height="24" rx="4" fill="${col}" stroke="${OL}" stroke-width="2"/>`;
+      }
+    });
     return o;
   },
   bamboo(time) {
@@ -582,6 +640,11 @@ function render(t, cover = false) {
       `<ellipse cx="0" cy="4" rx="95" ry="16" fill="#000" opacity=".18"/>` + fig.svg + extra + `</g>`;
   });
   o += onTop;
+  if ((sc.props || []).includes('jinn')) {
+    const near = sc.shot !== 'wide';
+    o += jinn(near ? 720 : 760, near ? GROUND + 40 : 1250, lt, near ? 1.05 : .5) + jinn(near ? 960 : 900, near ? GROUND + 20 : 1240, lt + 1.7, near ? 1.0 : .48);
+    o += fragrance(lt + sc.start);
+  }
   if ((sc.props || []).includes('ghost')) {
     const near = sc.shot !== 'wide';
     o = o.replace('<!--ghost-->', '');

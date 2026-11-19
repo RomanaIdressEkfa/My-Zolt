@@ -30,10 +30,10 @@ CLOTH = {"red": "#d63a3a", "blue": "#2f6fd6", "green": "#2e9e5b", "yellow": "#e8
 SECOND = {"man": "#8a5a36", "old_man": "#7d878e", "woman": "#e8b931", "old_woman": "#d63a3a", "girl": "#ffffff",
           "boy": "#2f6fd6"}
 TYPES = ["man", "woman", "girl", "boy", "old_man", "old_woman"]
-BACKGROUNDS = ["village_row", "bamboo", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
+BACKGROUNDS = ["village_row", "bamboo", "sweet_shop", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
 POSES = ["stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
 EMOTIONS = ["neutral", "happy", "sad", "angry", "surprised", "crying"]
-PROPS = ["ghost", "rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
+PROPS = ["ghost", "jinn", "rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
          "sewing", "school_bag"]
 
 
@@ -47,12 +47,12 @@ async def _eleven(text: str, voice_id: str, out: Path) -> list[tuple[float, floa
     import base64
 
     import httpx
-    model = os.getenv("ELEVENLABS_MODEL", "eleven_v3")
+    model = os.getenv("ELEVENLABS_MODEL", "eleven_v4")
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps",
                               params={"output_format": "mp3_44100_128"},
                               headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY", "").strip()},
-                              json={"text": text, "model_id": model})
+                              json={"text": text, "model_id": model, "language_code": "bn"})
     if r.status_code != 200:
         raise RuntimeError(f"ElevenLabs {r.status_code}: {r.text[:200]}")
     body = r.json()
@@ -70,6 +70,28 @@ async def _eleven(text: str, voice_id: str, out: Path) -> list[tuple[float, floa
     if buf.strip() and s0 is not None:
         sentences.append((s0, ends[-1], buf.strip()))
     return sentences
+
+
+# ElevenLabs premade voices that speak clean Bangla with eleven_v4 (checked by transcription).
+ELEVEN_VOICES = {"man": ["iP95p4xoKVk53GoZ742B", "cjVigY5qzO86Huf0OWal"],          # Chris, Eric
+                 "woman": ["EXAVITQu4vr4xnSDxMaL", "pFZP5JQG7iQjIQuC4Bku"],        # Sarah, Lily
+                 "girl": ["cgSgspJ2msm6clMCkdW9", "FGY2WhTYpPnrIDTdsKH5"],         # Jessica, Laura
+                 "boy": ["TX3LPaxmHKxFdv7VOQHJ", "bIHbv24MWmeRgasZH58o"],          # Liam, Will
+                 "old_man": ["pqHfZKP75CvOlQylNhV4"],                               # Bill
+                 "old_woman": ["XrExE9yKIg1WjnnlVkGX", "Xb7hH8MSUJpSbSDYk0k2"],    # Matilda, Alice
+                 "narrator_male": ["JBFqnCBsd6RMkjVDRZzb"],                         # George (storyteller)
+                 "narrator_female": ["pFZP5JQG7iQjIQuC4Bku"]}                       # Lily
+
+
+def _eleven_credits_left() -> int:
+    import httpx
+    try:
+        r = httpx.get("https://api.elevenlabs.io/v1/user/subscription", timeout=20,
+                      headers={"xi-api-key": os.getenv("ELEVENLABS_API_KEY", "").strip()})
+        j = r.json()
+        return int(j["character_limit"]) - int(j["character_count"])
+    except Exception:
+        return 10 ** 9   # can't tell (key without User access): just try
 
 
 # Google Gemini TTS: natural, emotional voices that speak Bangla; free with her Gemini key.
@@ -231,6 +253,12 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
     work.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+    if eleven:
+        need = sum(len((ln.get("text") or "")) for s in scenes for ln in s.get("lines") or [])
+        left = _eleven_credits_left()
+        if need > left:   # never switch voices halfway through a video
+            log.info("ElevenLabs credits left %d < %d needed: using Google voices for this video", left, need)
+            eleven = False
     if ctx.bot:
         await ctx.bot.send_message(ctx.chat_id, f"🎬 কার্টুন ভিডিও ({length_key}, {len(scenes)}টা দৃশ্য) বানানো শুরু করলাম। "
                                                 f"আনুমানিক {3 + 2 * list(LENGTHS).index(length_key)} মিনিট লাগবে, ম্যাম।")
@@ -251,6 +279,14 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
         gvoice[cid] = options[seen.get(c["type"], 0) % len(options)]
         seen[c["type"]] = seen.get(c["type"], 0) + 1
     gvoice["narrator"] = GEMINI_VOICES[f"narrator_{narrator_gender}"][0]
+    evoice, eseen = {}, {}
+    for cid, c in cast.items():
+        options = ELEVEN_VOICES[c["type"]]
+        evoice[cid] = options[eseen.get(c["type"], 0) % len(options)]
+        eseen[c["type"]] = eseen.get(c["type"], 0) + 1
+    evoice["narrator"] = ELEVEN_VOICES[f"narrator_{narrator_gender}"][0]
+    if inp.get("narrator_is") in cast:   # the grown-up storyteller: George's warm voice for both
+        evoice[inp["narrator_is"]] = evoice["narrator"]
     if inp.get("narrator_is") in cast:   # first-person story: the narrator is a character, same voice
         gvoice["narrator"] = gvoice[inp["narrator_is"]]
     gemini_ok = [bool(os.getenv("GEMINI_API_KEY", "").strip())]
@@ -278,8 +314,7 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                 source[(si, li)] = "free"
                 return await _voice(text, VOICES[g], out)
             if eleven_ok[0]:
-                vid = os.getenv(f"ELEVENLABS_VOICE_{g.upper()}", "") or \
-                    {"male": "pNInz6obpgDQGcFmaJgB", "female": "21m00Tcm4TlvDq8ikWAM"}[g]
+                vid = evoice[speaker]
                 try:
                     tm = await _eleven(text, vid, out)
                     if plausible(out, text):
@@ -437,6 +472,8 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                                          width=W, height=H, duration=int(total), supports_streaming=True,
                                          thumbnail=thumb, read_timeout=300, write_timeout=300)
     took = int(time.monotonic() - started)
+    from collections import Counter
+    (work / "voices.txt").write_text(" ".join(f"{k}={v}" for k, v in Counter(source.values()).items()), encoding="utf-8")
     return (f"Cartoon video ready and sent to her on Telegram: {final} ({total:.0f}s, {size_mb:.1f} MB, made in "
             f"{took}s). Cover: {cover}. Tell her it is ready to post as a Facebook Reel.")
 
@@ -469,7 +506,7 @@ _SCENE = {"type": "object", "additionalProperties": False,
                          "characters": {"type": "array", "items": _IN_SCENE, "maxItems": 3,
                                         "description": "1-3 characters; different positions, facing each other"},
                          "props": {"type": "array", "items": {"type": "string", "enum": PROPS},
-                                   "description": "ghost = a pale figure in a white sari with hair over the face (horror)"},
+                                   "description": "ghost = a pale figure in a white sari with hair over the face; jinn = two tall glowing strangers in white jubba floating above the ground, with fragrance in the air"},
                          "weather": {"type": "string", "enum": ["none", "fog", "rain"]},
                          "camera": {"type": "string", "enum": ["zoom_in", "zoom_out", "pan_left", "pan_right", "still"]}}}
 
