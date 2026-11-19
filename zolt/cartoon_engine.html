@@ -323,20 +323,27 @@ function ghost(x, y, t, s = 1) {
     <path d="M-60,-520 L-75,-300 M-30,-500 L-40,-290 M30,-500 L40,-290 M60,-520 L75,-300" stroke="#14100e" stroke-width="14" stroke-linecap="round"/>
     <path d="M-110,-420 Q-150,-300 -130,-220 M110,-420 Q150,-300 130,-220" stroke="#e9ecef" stroke-width="26" fill="none" stroke-linecap="round"/></g>`;
 }
-function jinn(x, y, t, s = 1) {   // tall stranger in a white jubba; face hidden; floats above the ground
-  const bob = Math.sin(t * 1.6 + x) * 10, glow = .5 + Math.sin(t * 2.4 + x) * .15;
-  return `<defs><radialGradient id="jglow"><stop offset="0" stop-color="#fff6d0" stop-opacity=".55"/><stop offset="1" stop-color="#fff6d0" stop-opacity="0"/></radialGradient>
-      <linearGradient id="jfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7f5ee"/><stop offset=".85" stop-color="#f7f5ee" stop-opacity=".9"/><stop offset="1" stop-color="#f7f5ee" stop-opacity="0"/></linearGradient></defs>
-    <g transform="translate(${x} ${y - 70 + bob}) scale(${s})">
-    <ellipse cx="0" cy="-380" rx="260" ry="460" fill="url(#jglow)" opacity="${glow}"/>
-    <path d="M-80,-600 C-120,-420 -130,-180 -110,0 L110,0 C130,-180 120,-420 80,-600Z" fill="url(#jfade)" stroke="#cfcab8" stroke-width="3"/>
-    <path d="M-80,-600 Q0,-560 80,-600 L60,-640 L-60,-640Z" fill="#ece8dc"/>
-    <ellipse cx="0" cy="-700" rx="66" ry="78" fill="#1b1612"/>
-    <circle cx="-22" cy="-705" r="7" fill="#ffd54f" opacity="${.6 + glow * .4}"/><circle cx="22" cy="-705" r="7" fill="#ffd54f" opacity="${.6 + glow * .4}"/>
-    <path d="M-80,-730 Q-80,-830 0,-835 Q80,-830 80,-730 Q40,-760 0,-756 Q-40,-760 -80,-730Z" fill="#f4f1e8" stroke="#cfcab8" stroke-width="3"/>
-    <path d="M-40,-650 Q0,-560 40,-650" fill="#e9e5da" opacity=".9"/></g>
-    <ellipse cx="${x}" cy="${y + 6}" rx="70" ry="12" fill="#000" opacity=".08"/>`;
+function jinn(x, y, t, s = 1) {   // tall stranger seen from BEHIND: turban, shawl, flowing jubba, soft light; never a face
+  const sway = Math.sin(t * 1.2 + x) * 6, bob = Math.sin(t * 1.6 + x) * 10, glow = .55 + Math.sin(t * 2.2 + x) * .15;
+  const folds = [-70, -40, -12, 16, 44, 72].map((fx, k) =>
+    `<path d="M${fx * .55},-560 Q${fx + sway * (k % 2 ? 1 : -1)},-280 ${fx * 1.15},-10" stroke="#e3dccb" stroke-width="5" fill="none" opacity=".8"/>`).join('');
+  return `<defs><radialGradient id="jglow"><stop offset="0" stop-color="#fff3c4" stop-opacity=".7"/><stop offset=".6" stop-color="#ffe9a0" stop-opacity=".18"/><stop offset="1" stop-color="#ffe9a0" stop-opacity="0"/></radialGradient>
+      <linearGradient id="jrobe" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfaf5"/><stop offset=".8" stop-color="#f3efe4"/><stop offset="1" stop-color="#f3efe4" stop-opacity="0"/></linearGradient>
+      <linearGradient id="jshawl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#efe6cf"/><stop offset="1" stop-color="#e2d5b2"/></linearGradient></defs>
+    <g transform="translate(${x} ${y - 80 + bob}) scale(${s})">
+    <ellipse cx="0" cy="-420" rx="300" ry="520" fill="url(#jglow)" opacity="${glow}"/>
+    <path d="M-95,-590 C-140,-400 -150,-160 -125,0 L125,0 C150,-160 140,-400 95,-590 Q0,-620 -95,-590Z" fill="url(#jrobe)" stroke="#d8cfbb" stroke-width="3"/>
+    ${folds}
+    <path d="M-110,-600 Q0,-650 110,-600 L120,-380 Q60,-350 0,-360 Q-60,-350 -120,-380Z" fill="url(#jshawl)" stroke="#cdbf9a" stroke-width="3"/>
+    <path d="M-120,-380 Q-60,-350 0,-360 Q60,-350 120,-380" stroke="#c9a227" stroke-width="10" fill="none"/>
+    <path d="M-116,-400 Q-60,-372 0,-382 Q60,-372 116,-400" stroke="#e8c45a" stroke-width="3" fill="none" stroke-dasharray="8 6"/>
+    <path d="M-62,-640 C-80,-760 80,-760 62,-640 Q0,-610 -62,-640Z" fill="#fbfaf5" stroke="#d8cfbb" stroke-width="3"/>
+    <path d="M-58,-690 Q0,-668 58,-690 M-50,-722 Q0,-700 50,-722 M-36,-748 Q0,-732 36,-748" stroke="#e1d9c6" stroke-width="5" fill="none"/>
+    <path d="M30,-650 Q70,-560 48,-470 Q40,-520 22,-560Z" fill="#f4f0e4" stroke="#d8cfbb" stroke-width="2"/>
+    </g>
+    <ellipse cx="${x}" cy="${y + 6}" rx="80" ry="12" fill="#000" opacity=".07"/>`;
 }
+
 function fragrance(t) {   // drifting golden specks: the sweet smell in the air
   let o = '';
   for (let k = 0; k < 40; k++) {
