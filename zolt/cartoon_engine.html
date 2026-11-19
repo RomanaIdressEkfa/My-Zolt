@@ -728,7 +728,8 @@ function render(t, cover = false) {
   const showTitle = cover || t < 3.2;
   titleEl.innerHTML = showTitle ? `<b>${esc(DATA.title)}</b>` + (DATA.episode ? `<i>${esc(DATA.episode)}</i>` : '') : '';
   titleEl.style.opacity = cover ? 1 : Math.max(0, Math.min(1, (3.2 - t) / .5));
-  const fade = cover ? 0 : Math.max(lt < .3 ? 1 - lt / .3 : 0, (sc.end - t) < .2 && i < scenes.length - 1 ? 1 - (sc.end - t) / .2 : 0, (DATA.total - t) < .6 ? 1 - (DATA.total - t) / .6 : 0);
+  const fade = cover ? 0 : Math.max(lt < .3 && i > 0 ? 1 - lt / .3 : 0,   // no fade-in on the very first frame: Facebook uses it as the thumbnail
+    (sc.end - t) < .2 && i < scenes.length - 1 ? 1 - (sc.end - t) / .2 : 0, (DATA.total - t) < .6 ? 1 - (DATA.total - t) / .6 : 0);
   document.getElementById('fade').style.opacity = fade;
 }
 </script>
