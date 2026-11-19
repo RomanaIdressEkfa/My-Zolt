@@ -31,9 +31,9 @@ SECOND = {"man": "#8a5a36", "old_man": "#7d878e", "woman": "#e8b931", "old_woman
           "boy": "#2f6fd6"}
 TYPES = ["man", "woman", "girl", "boy", "old_man", "old_woman"]
 BACKGROUNDS = ["village_row", "bamboo", "sweet_shop", "home", "kitchen", "street", "village", "shop", "office", "hospital", "school"]
-POSES = ["lie", "stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
+POSES = ["lie", "hug", "stand", "walk", "sit", "sew", "give", "angry", "cry", "happy", "think", "pray"]
 EMOTIONS = ["sleeping", "possessed", "neutral", "happy", "sad", "angry", "surprised", "crying"]
-PROPS = ["ghost", "jinn", "rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
+PROPS = ["ghost", "jinn", "smoke", "lantern_dies", "rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone", "letter", "tea_cup", "medicine",
          "sewing", "school_bag"]
 
 
