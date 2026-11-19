@@ -37,7 +37,8 @@ PROPS = ["rickshaw", "lantern", "rice_plate", "dress", "chador", "money", "phone
          "sewing", "school_bag"]
 
 
-LENGTHS = {"1 minute": (6, 130), "2 minutes": (11, 260), "3 minutes": (16, 390)}  # min scenes, min words
+LENGTHS = {"1 minute": (6, 130), "2 minutes": (11, 260), "3 minutes": (14, 390), "4 minutes": (15, 480),
+           "5 minutes": (18, 600)}  # min scenes, min words
 MALE = {"man", "boy", "old_man"}
 
 
@@ -122,6 +123,80 @@ async def _gemini_tts(text: str, voice: str, style: str, out: Path) -> list:
     raise RuntimeError("all Gemini voices unavailable")
 
 
+async def _gemini_dialogue(parts: list[tuple[str, str, str]], out: Path) -> None:
+    """Voice several consecutive lines (at most 2 speakers) in ONE request: the free tier allows only
+    ~10 requests per model per day, so one request per line runs out after a single video.
+    parts: (label, voice, text). Raises when no model can answer."""
+    import base64
+    import wave
+
+    import httpx
+    voices = dict((label, voice) for label, voice, _ in parts)
+    if len(voices) == 1:
+        text = "\n\n".join(t for _, _, t in parts)
+        speech = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": next(iter(voices.values()))}}}
+    else:
+        text = "\n".join(f"{label}: {t}" for label, _, t in parts)
+        speech = {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
+            {"speaker": label, "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": v}}} for label, v in voices.items()]}}
+    body = {"contents": [{"parts": [{"text": text}]}],
+            "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": speech}}
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    async with httpx.AsyncClient(timeout=180) as client:
+        for model in [m for m in GEMINI_TTS_MODELS if m not in _gemini_dead]:
+            for attempt in range(3):
+                r = await client.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                      params={"key": key}, json=body)
+                if r.status_code == 200:
+                    try:
+                        pcm = base64.b64decode(r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]["data"])
+                    except (KeyError, IndexError):
+                        break
+                    with wave.open(str(out), "wb") as w:
+                        w.setnchannels(1)
+                        w.setsampwidth(2)
+                        w.setframerate(24000)
+                        w.writeframes(pcm)
+                    return
+                delay = re.search(r'"retryDelay":\s*"(\d+)', r.text)
+                per_minute = "PerDay" not in r.text and (delay is None or int(delay.group(1)) <= 60)
+                if r.status_code == 429 and attempt < 2 and per_minute:
+                    await asyncio.sleep((int(delay.group(1)) if delay else 20) + 1)
+                    continue
+                if r.status_code == 429:
+                    _gemini_dead.add(model)
+                log.warning("Gemini dialogue %s: HTTP %s", model, r.status_code)
+                break
+    raise RuntimeError("all Gemini voices unavailable")
+
+
+def _split_lines(src: Path, texts: list[str], outs: list[Path]) -> None:
+    """Cut one recording of several lines into one clip per line at the pauses between them."""
+    total = _duration(src)
+    cuts: list[float] = []
+    if len(texts) > 1:
+        proc = subprocess.run([_ffmpeg(), "-hide_banner", "-i", str(src), "-af", "silencedetect=noise=-38dB:d=0.22",
+                               "-f", "null", "-"], capture_output=True, text=True)
+        starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", proc.stderr)]
+        ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", proc.stderr)]
+        gaps = [(e - s, (s + e) / 2) for s, e in zip(starts, ends) if 0.3 < s and e < total - 0.3]
+        # expected cut positions by text length, to pick the pause nearest each boundary
+        sizes = [len(t) for t in texts]
+        expect, acc = [], 0
+        for n in sizes[:-1]:
+            acc += n
+            expect.append(total * acc / sum(sizes))
+        # pauses between turns are longer than pauses between sentences: take the longest ones
+        longest = sorted(gaps, reverse=True)[:len(texts) - 1]
+        cuts = sorted(mid for _, mid in longest) if len(longest) == len(texts) - 1 else sorted(expect)
+    bounds = [0.0, *cuts, total]
+    for i, out in enumerate(outs):
+        _run_ffmpeg(["-i", str(src), "-ss", f"{bounds[i]:.3f}", "-to", f"{bounds[i + 1]:.3f}",
+                     "-af", "silenceremove=start_periods=1:start_threshold=-45dB,areverse,"
+                            "silenceremove=start_periods=1:start_threshold=-45dB,areverse",
+                     "-c:a", "pcm_s16le", "-f", "wav", str(out)])
+
+
 async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
     scenes = [s for s in inp.get("scenes") or [] if any((ln.get("text") or "").strip() for ln in s.get("lines") or [])]
     cast_in = inp.get("characters") or []
@@ -176,6 +251,8 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
         gvoice[cid] = options[seen.get(c["type"], 0) % len(options)]
         seen[c["type"]] = seen.get(c["type"], 0) + 1
     gvoice["narrator"] = GEMINI_VOICES[f"narrator_{narrator_gender}"][0]
+    if inp.get("narrator_is") in cast:   # first-person story: the narrator is a character, same voice
+        gvoice["narrator"] = gvoice[inp["narrator_is"]]
     gemini_ok = [bool(os.getenv("GEMINI_API_KEY", "").strip())]
 
     source: dict[tuple[int, int], str] = {}
@@ -194,6 +271,8 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
         if (next((ch.get("pose") for ch in scenes[si].get("characters") or [] if ch.get("id") == speaker), "") == "cry"):
             mood = "crying"
         style = STYLE["narrator"] if speaker == "narrator" else STYLE.get(mood, STYLE["neutral"])
+        if not force_free and source.get((si, li)) == "google":
+            return []   # already voiced in a batched dialogue request
         async with gate:
             if force_free:
                 source[(si, li)] = "free"
@@ -223,6 +302,37 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                     gemini_ok[0] = False
             source[(si, li)] = "free"
             return await _voice(text, VOICES[g], out)
+
+    # Google first, in batches: consecutive lines of a scene with at most 2 speakers go in one request.
+    if gemini_ok[0] and not eleven_ok[0]:
+        groups: list[list[tuple[int, int, dict]]] = []
+        for si, li, ln in jobs:
+            g_last = groups[-1] if groups else None
+            sp = ln.get("speaker") if ln.get("speaker") in cast else "narrator"
+            speakers = {(x[2].get("speaker") if x[2].get("speaker") in cast else "narrator") for x in g_last or []}
+            if g_last and g_last[0][0] == si and len(speakers | {sp}) <= 2 and len(g_last) < 5 and                     sum(len(x[2]["text"]) for x in g_last) + len(ln["text"]) < 700:
+                g_last.append((si, li, ln))
+            else:
+                groups.append([(si, li, ln)])
+        log.info("Voicing %d lines in %d Google requests", len(jobs), len(groups))
+        for gi, grp in enumerate(groups):
+            labels = {}
+            parts = []
+            for si, li, ln in grp:
+                sp = ln.get("speaker") if ln.get("speaker") in cast else "narrator"
+                label = labels.setdefault(sp, "Narrator" if sp == "narrator" else re.sub(r"[^A-Za-z]", "", sp).title() or f"Person{len(labels)}")
+                parts.append((label, gvoice[sp], ln["text"].strip()))
+            raw = work / f"g{gi}.wav"
+            try:
+                await _gemini_dialogue(parts, raw)
+                outs = [work / f"v{si}_{li}.mp3" for si, li, _ in grp]
+                await asyncio.to_thread(_split_lines, raw, [x[2] for x in parts], outs)
+                for (si, li, ln), out in zip(grp, outs):
+                    if plausible(out, ln["text"]):
+                        source[(si, li)] = "google"
+            except Exception as e:
+                log.warning("Batched Google voices stopped: %s", e)
+                break
 
     timings = await asyncio.gather(*(speak(si, li, ln) for si, li, ln in jobs))
     # One voice per character for the whole video: if a quota ran out midway, redo that
@@ -369,7 +479,7 @@ register_tools([({
                    "with tears, angry, happy, sew, give...). The story is told mainly through the characters' DIALOGUE "
                    "in comic speech bubbles, each character in their own voice (male/female), with short narrator "
                    "lines in a story box. Title card + cover; sent to her on Telegram. Length: 1 minute = 6-9 scenes "
-                   "~160 words; 2 minutes = 11-16 scenes ~300 words; 3 minutes = 16-24 scenes ~430 words. Strong "
+                   "~160 words; 2 minutes = 11-16 scenes ~300 words; 3 minutes ~430 words; 4 minutes ~540 words; 5 minutes ~660 words. Strong "
                    "hook first, emotional ending.",
     "input_schema": _schema({
         "title": {"type": "string", "description": "Short catchy Bangla title"},
