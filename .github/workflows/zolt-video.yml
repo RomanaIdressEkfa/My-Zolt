@@ -1,0 +1,50 @@
+name: zolt-video
+
+# Started by the Zolt Cloudflare Worker when her PC is off: renders a cartoon reel and sends it to Telegram.
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "Her request (story idea, length, style)"
+        required: true
+
+concurrency:
+  group: zolt-video
+  cancel-in-progress: false
+
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Zolt
+        run: |
+          pip install -r requirements.txt psutil httpx
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y fonts-noto-core fonts-beng >/dev/null || true
+
+      - name: Make the video
+        env:
+          ZOLT_REQUEST: ${{ inputs.request }}
+          ZOLT_CLOUD: "1"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALLOWED_TELEGRAM_USER_ID: ${{ secrets.ALLOWED_TELEGRAM_USER_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_MODEL: eleven_v4
+          MODEL_ORDER: gemini,groq,openrouter
+          GEMINI_MODEL: gemini-flash-latest,gemini-flash-lite-latest
+          GROQ_MODEL: openai/gpt-oss-120b,openai/gpt-oss-20b
+          OPENROUTER_MODEL: nvidia/nemotron-3-ultra-550b-a55b:free
+          CLOUD_URL: ${{ secrets.CLOUD_URL }}
+          PC_TOKEN: ${{ secrets.PC_TOKEN }}
+        run: python -m zolt.cloud_video

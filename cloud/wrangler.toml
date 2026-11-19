@@ -1,0 +1,19 @@
+name = "zolt"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[triggers]
+crons = ["* * * * *"]   # reminders, every minute
+
+[vars]
+GH_REPO = "RomanaIdressEkfa/My-Zolt"
+GH_BRANCH = "main"
+GEMINI_MODELS = "gemini-flash-latest,gemini-flash-lite-latest"
+
+# KV namespace id is filled in by setup (wrangler kv namespace create ZOLT)
+[[kv_namespaces]]
+binding = "ZOLT"
+id = "b909fa7d59e14cff82bf45f7e57ef1d0"
+
+# Secrets (set with `wrangler secret put`, never stored here):
+# TELEGRAM_BOT_TOKEN, OWNER_ID, GEMINI_API_KEY, GROQ_API_KEY, GH_TOKEN, PC_TOKEN, WEBHOOK_SECRET

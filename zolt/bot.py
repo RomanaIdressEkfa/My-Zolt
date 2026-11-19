@@ -415,4 +415,40 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
     log.info("%s is running. Owner ID: %s", CONFIG.agent_name, CONFIG.allowed_user_id or "NOT SET")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    if os.getenv("CLOUD_URL", "").strip():
+        asyncio.run(_run_with_cloud(app))   # Telegram -> Cloudflare Worker -> this PC
+    else:
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+async def _run_with_cloud(app: Application) -> None:
+    """Telegram's webhook points at the Zolt Cloudflare Worker (always on). While this PC runs we tell the
+    Worker every second that we're here and take the updates it holds for us; when the PC is off the
+    Worker answers by itself and starts cloud videos."""
+    import httpx
+
+    from .memory import read_memory
+    url = os.getenv("CLOUD_URL", "").strip().rstrip("/")
+    headers = {"x-zolt-token": os.getenv("PC_TOKEN", "").strip()}
+    await app.initialize()
+    if app.post_init:
+        await app.post_init(app)
+    await app.start()
+    log.info("Connected to Zolt cloud: %s", url)
+    last_memory, failures = "", 0
+    async with httpx.AsyncClient(timeout=20) as client:
+        while True:
+            try:
+                memory = read_memory()
+                body = {"memory": memory} if memory != last_memory else {}
+                r = await client.post(f"{url}/pc/sync", headers=headers, json=body)
+                r.raise_for_status()
+                last_memory, failures = memory, 0
+                for raw in r.json().get("updates", []):
+                    # handle in the background so long jobs never stop the heartbeat
+                    asyncio.create_task(app.process_update(Update.de_json(raw, app.bot)))
+            except Exception as e:
+                failures += 1
+                if failures in (1, 10) or failures % 60 == 0:
+                    log.warning("Cloud sync failed (%d): %s", failures, e)
+            await asyncio.sleep(1.0)

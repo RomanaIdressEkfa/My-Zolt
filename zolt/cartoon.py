@@ -478,7 +478,8 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                              "-movflags", "+faststart", str(final)], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     from playwright.async_api import async_playwright
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(channel="msedge", headless=True)
+        # Edge on her Windows PC; plain Chromium in the cloud video factory (Linux)
+        browser = await pw.chromium.launch(channel="msedge" if os.name == "nt" else None, headless=True)
         page = await browser.new_page(viewport={"width": W, "height": H})
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))

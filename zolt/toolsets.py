@@ -7,6 +7,7 @@ itself with load_tools. Groups stay loaded for the rest of the conversation.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -52,6 +53,8 @@ LOAD_TOOLS_SCHEMA: dict[str, Any] = {
 
 
 def groups_for(text: str) -> set[str]:
+    if os.getenv("ZOLT_CLOUD"):   # cloud video factory: no PC here, only the video tools
+        return {"media"}
     low = text.lower()
     return {"core"} | {g for g, pattern in KEYWORDS.items() if re.search(pattern, low)}
 
@@ -66,6 +69,8 @@ def allowed_names(groups: set[str]) -> set[str]:
 
 
 def select(all_openai_tools: list[dict[str, Any]], groups: set[str]) -> list[dict[str, Any]]:
+    if os.getenv("ZOLT_CLOUD"):
+        groups = {"media"}
     names = allowed_names(groups)
     return [t for t in all_openai_tools
             if t["function"]["name"] in names
