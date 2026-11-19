@@ -493,12 +493,29 @@ async def make_cartoon_video(inp: dict, ctx: ToolContext) -> str:
                 await asyncio.to_thread(proc.stdin.write, shot)
         finally:
             proc.stdin.close()
-        await page.evaluate("render(1.2, true)")
+        # Cover from the most gripping scene (cover_scene), so every episode's thumbnail looks different.
+        k = inp.get("cover_scene")
+        k = k if isinstance(k, int) and 0 <= k < len(timeline) else 0
+        sc_k = timeline[k]
+        cover_t = sc_k["start"] + (sc_k["end"] - sc_k["start"]) * .6 if k else 1.2
+        await page.evaluate(f"render({cover_t:.3f}, true)")
         await page.screenshot(path=str(cover), type="jpeg", quality=92)
         await browser.close()
     code = await asyncio.to_thread(proc.wait)
     if code != 0 or errors:
         raise RuntimeError(f"render failed: {(proc.stderr.read() or b'').decode()[-400:]} {errors[:2]}")
+    # The first second shows the cover: Facebook/YouTube take the first frame as the thumbnail.
+    with_intro = work / (final.stem + "_final.mp4")
+    await asyncio.to_thread(_run_ffmpeg, [
+        "-loop", "1", "-framerate", str(FPS), "-t", "1", "-i", str(cover), "-i", str(final),
+        "-f", "lavfi", "-t", "1", "-i", "anullsrc=r=44100:cl=stereo",
+        "-filter_complex", f"[0:v]scale={W}:{H},setsar=1,format=yuv420p[c];[1:v]setsar=1,format=yuv420p[m];"
+                           "[1:a]aresample=44100,aformat=channel_layouts=stereo[ma];"
+                           "[c][2:a][m][ma]concat=n=2:v=1:a=1[v][a]",
+        "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(with_intro)])
+    with_intro.replace(final)
+    total += 1
     size_mb = final.stat().st_size / 1e6
 
     if ctx.bot:
