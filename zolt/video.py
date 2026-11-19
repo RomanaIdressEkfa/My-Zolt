@@ -98,7 +98,7 @@ def _gradient(out: Path) -> None:
 async def _voice(text: str, voice: str, out: Path) -> list[tuple[float, float, str]]:
     """Save the narration and return sentence timings [(start, end, text)] in seconds."""
     import edge_tts
-    for attempt in range(6):  # the free service fails now and then at random
+    for attempt in range(10):  # the free service fails at random (some days half the requests)
         sentences: list[tuple[float, float, str]] = []
         try:
             with out.open("wb") as f:
@@ -111,10 +111,20 @@ async def _voice(text: str, voice: str, out: Path) -> list[tuple[float, float, s
                         sentences.append((start, start + chunk["duration"] / 1e7, chunk["text"]))
             return sentences
         except Exception as e:
-            if attempt == 5:
-                raise
             log.warning("Voice attempt %d failed: %s", attempt + 1, e)
-            await asyncio.sleep(2 + attempt * 2)
+            await asyncio.sleep(min(1.5 + attempt, 6))
+    # Still nothing: say it sentence by sentence and join the pieces.
+    parts = [p.strip() for p in re.split(r"(?<=[।?!,])\s+", text) if p.strip()]
+    if len(parts) < 2:
+        raise RuntimeError(f"Microsoft voice failed for: {text[:60]}")
+    pieces = []
+    for k, part in enumerate(parts):
+        piece = out.with_name(f"{out.stem}_p{k}.mp3")
+        await _voice(part, voice, piece)
+        pieces.append(piece)
+    lst = out.with_name(out.stem + "_parts.txt")
+    lst.write_text("".join(f"file '{p.name}'\n" for p in pieces), encoding="utf-8")
+    await asyncio.to_thread(_run_ffmpeg, ["-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)])
     return []
 
 
